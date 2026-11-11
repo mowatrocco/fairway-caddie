@@ -6,11 +6,32 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 
 maplibregl.setWorkerUrl(workerUrl)
+
+// Aerial tiles go through the on-phone photo store (fcaerial://z/x/y), so saved
+// photos load with no signal and new ones are kept for next time.
+let protocolAdded = false
+function ensureTileProtocol() {
+  if (protocolAdded) return
+  protocolAdded = true
+  maplibregl.addProtocol('fcaerial', async (params, abort) => {
+    const m = /^fcaerial:\/\/(\d+)\/(\d+)\/(\d+)/.exec(params.url)
+    if (!m) throw new Error(`Bad tile address ${params.url}`)
+    try {
+      const data = await getTile({ z: Number(m[1]), x: Number(m[2]), y: Number(m[3]) }, abort.signal)
+      return { data }
+    } catch (e) {
+      const err = new Error(e instanceof Error ? e.message : 'Tile failed') as Error & { status?: number | null }
+      err.status = e instanceof TileError ? e.status : null
+      throw err
+    }
+  })
+}
 import type { LngLat } from '../geo/geodesic'
 import type { CourseFeature, FeatureKind } from '../../types/courseMap'
 import type { ShapeType } from '../course/features'
 import { KINDS, vertices } from '../course/features'
-import { LINZ_ATTRIBUTION, linzAerialTileUrl } from './linzKey'
+import { LINZ_ATTRIBUTION } from './linzKey'
+import { getTile, setTileKey, TileError } from './tileStore'
 
 // The only file that knows about MapLibre. Screens use this adapter, so the map
 // provider can be swapped without touching anything else.
@@ -22,6 +43,9 @@ export interface MapAdapter {
   setDraft(points: LngLat[], shape: ShapeType | null): void
   setEditVertices(points: LngLat[], activeIndex: number | null): void
   setGolfer(point: LngLat | null, accuracyM: number | null): void
+  /** A measured point (with a line from `from`), or null to clear. */
+  setMeasure(point: LngLat | null, from: LngLat | null): void
+  onTapPoint(cb: (p: LngLat) => void): () => void
   getCentre(): LngLat
   jumpTo(centre: LngLat, zoom?: number, bearing?: number): void
   fitTo(points: LngLat[], bearing: number): void
@@ -41,7 +65,7 @@ function style(key: string | null): StyleSpecification {
       ? {
           linz: {
             type: 'raster',
-            tiles: [linzAerialTileUrl(key)],
+            tiles: ['fcaerial://{z}/{x}/{y}'],
             tileSize: 256,
             maxzoom: 22,
             attribution: LINZ_ATTRIBUTION,
@@ -76,6 +100,8 @@ function toGeoJson(features: CourseFeature[], hole: number, selectedId: string |
 const empty = { type: 'FeatureCollection' as const, features: [] }
 
 export function createMap(container: HTMLElement, opts: { key: string | null; centre: LngLat; zoom: number }): MapAdapter {
+  ensureTileProtocol()
+  setTileKey(opts.key)
   const map = new maplibregl.Map({
     container,
     style: style(opts.key),
@@ -107,6 +133,7 @@ export function createMap(container: HTMLElement, opts: { key: string | null; ce
     map.addSource('draft', { type: 'geojson', data: empty })
     map.addSource('edit', { type: 'geojson', data: empty })
     map.addSource('golfer', { type: 'geojson', data: empty })
+    map.addSource('measure', { type: 'geojson', data: empty })
 
     const isPoly = ['==', ['geometry-type'], 'Polygon'] as const
     const isLine = ['==', ['geometry-type'], 'LineString'] as const
@@ -183,6 +210,20 @@ export function createMap(container: HTMLElement, opts: { key: string | null; ce
       },
     })
     map.addLayer({
+      id: 'measure-line',
+      type: 'line',
+      source: 'measure',
+      filter: ['==', ['geometry-type'], 'LineString'],
+      paint: { 'line-color': '#ffffff', 'line-width': 2, 'line-dasharray': [1, 1] },
+    })
+    map.addLayer({
+      id: 'measure-point',
+      type: 'circle',
+      source: 'measure',
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: { 'circle-radius': 8, 'circle-color': '#f2c230', 'circle-stroke-color': '#121614', 'circle-stroke-width': 2 },
+    })
+    map.addLayer({
       id: 'golfer-accuracy',
       type: 'circle',
       source: 'golfer',
@@ -239,6 +280,17 @@ export function createMap(container: HTMLElement, opts: { key: string | null; ce
         type: 'FeatureCollection',
         features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: point }, properties: { px15: (accuracyM ?? 0) / mPerPx15 } }],
       })
+    },
+    setMeasure(point, from) {
+      if (!point) return set('measure', empty)
+      const feats: unknown[] = [{ type: 'Feature', geometry: { type: 'Point', coordinates: point }, properties: {} }]
+      if (from) feats.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [from, point] }, properties: {} })
+      set('measure', { type: 'FeatureCollection', features: feats })
+    },
+    onTapPoint(cb) {
+      const handler = (e: maplibregl.MapMouseEvent) => cb([e.lngLat.lng, e.lngLat.lat])
+      map.on('click', handler)
+      return () => map.off('click', handler)
     },
     getCentre() {
       const c = map.getCenter()

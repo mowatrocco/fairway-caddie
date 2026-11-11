@@ -30,13 +30,15 @@ A personal GPS caddie for South Head Golf Club, built as an iPhone web app (PWA)
 | `npm run build` | Makes the finished app in `dist/`, ready to host. |
 | `npm run test:e2e` | Browser test of the main app (needs Google Chrome; run `npm run build` first). |
 | `npm run test:e2e:map` | Browser test of the course-mapping screen. |
+| `npm run test:e2e:caddie` | Browser test of the Caddie screen with simulated GPS and offline photos. |
 
 ## Rules the code follows
 
 - All distances are stored in metres. Yards are only for display.
 - Carry and total are separate fields and are never swapped. A distance whose type isn't confirmed is kept as "rough" and marked ≈.
 - The caddie never shows advice it can't back with real data.
-- Everything stays on the phone. The only things fetched are LINZ map photos.
+- Everything stays on the phone. The only things fetched are LINZ map photos, which are kept on the phone (Cache Storage) so the map works with no signal.
+- GPS runs only while the Caddie or course-map screen is open and the app is on screen. Distances are never shown as plain numbers when GPS is worse than ±10 m or more than 20 s old.
 - The LINZ map key is stored on the phone only, never in the code or in backups.
 - Every course feature carries a trust label: Official, Verified on course, Traced from imagery or Estimated. Moving a verified point by hand drops it to Traced.
 
@@ -44,3 +46,4 @@ A personal GPS caddie for South Head Golf Club, built as an iPhone web app (PWA)
 
 - **Stage 1 (Nov 2026):** app shell, four tabs, editable bag with gap ladder, settings, auto-save, JSON backup/restore, PWA install and offline support.
 - **Stage 2 (Nov 2026):** South Head scorecards (Blue, White, Yellow); course-mapping screen on LINZ aerial photos with crosshair tracing, hole checklist against the card, GPS point capture, undo, GeoJSON export/import; saved data version 2.
+- **Stage 3 (Nov 2026):** live GPS on the Caddie screen (Quick and Map views): front/middle/back, accuracy badge, hazards with reach and carry along your line, out-of-bounds clearance, tap-to-measure, set-position-by-hand fallback, rangefinder cross-check, hole-switch suggestion, keep-screen-on, offline course photos.

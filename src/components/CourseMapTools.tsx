@@ -6,6 +6,7 @@ import { exportGeoJson, geoJsonFileName, importGeoJson, type ImportResult } from
 import { getDeviceSetting, setDeviceSetting } from '../lib/storage/db'
 import { shareOrDownload } from '../lib/storage/share'
 import { MapKeyForm } from './MapKeyForm'
+import { OfflinePhotos } from './OfflinePhotos'
 
 interface Props {
   data: AppData
@@ -131,6 +132,7 @@ export function CourseMapTools({ data, dispatch }: Props) {
           </div>
         </div>
       )}
+      <OfflinePhotos features={map?.features ?? []} />
     </>
   )
 }
