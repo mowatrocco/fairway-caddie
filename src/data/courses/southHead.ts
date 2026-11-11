@@ -13,7 +13,9 @@ function holes(rows: Row[]): ScorecardHole[] {
 export const southHead: Course = {
   id: 'south-head',
   name: 'South Head Golf Club',
-  location: '1640 South Head Road, Helensville, Auckland',
+  location: '1640 South Head Road, Waioneke, South Head 0874',
+  /** Where the map opens before anything is mapped. From the club's Google listing; not course data. */
+  mapStart: { lng: 174.317846, lat: -36.560186 },
   distanceMarkers: [
     { colour: 'Blue', toMiddleM: 180 },
     { colour: 'White', toMiddleM: 135 },

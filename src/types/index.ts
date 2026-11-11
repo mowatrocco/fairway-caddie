@@ -1,3 +1,5 @@
+import type { CourseMap } from './courseMap'
+
 // Core data types for Fairway Caddie.
 // All distances are stored in METRES. Conversion to yards happens only for display/input.
 
@@ -52,6 +54,9 @@ export interface Profile {
 export interface AppData {
   profile: Profile
   bag: Club[]
+  /** Mapped course geometry, one entry per course. */
+  courseMaps: CourseMap[]
 }
 
-export const SCHEMA_VERSION = 1
+/** 1 = bag + profile. 2 = adds course maps. */
+export const SCHEMA_VERSION = 2

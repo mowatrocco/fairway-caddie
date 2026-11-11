@@ -153,7 +153,7 @@ try {
   const input = await page.$('[data-testid="restore-input"]')
   await input.uploadFile(join(DOWNLOADS, file))
   await page.waitForSelector('[aria-label="Confirm restore"]')
-  check((await text()).includes('13 clubs for Rocco'), 'restore shows a summary before replacing')
+  check((await text()).includes('13 clubs for Rocco, 0 mapped course features'), 'restore shows a summary before replacing')
   await clickText('button', 'Replace my data')
   await page.click('button[aria-label="Close"]')
   await settle()

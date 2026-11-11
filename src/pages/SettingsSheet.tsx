@@ -3,8 +3,10 @@ import type { AppData, Units } from '../types'
 import type { Action } from '../state/reducer'
 import { backupFileName, backupToJson, createBackup, readBackup, type RestoreResult } from '../lib/storage/backup'
 import { Sheet } from '../components/Sheet'
+import { shareOrDownload } from '../lib/storage/share'
 import { Choice, NumberField, TextField } from '../components/Fields'
 import { southHead } from '../data/courses/southHead'
+import { CourseMapTools } from '../components/CourseMapTools'
 
 interface Props {
   data: AppData
@@ -18,28 +20,6 @@ const unitOptions: { value: Units; label: string }[] = [
   { value: 'metres', label: 'Metres' },
   { value: 'yards', label: 'Yards' },
 ]
-
-async function shareOrDownload(json: string, fileName: string): Promise<'shared' | 'downloaded' | 'cancelled'> {
-  const file = new File([json], fileName, { type: 'application/json' })
-  if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: 'Fairway Caddie backup' })
-      return 'shared'
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return 'cancelled'
-      // fall through to a plain download
-    }
-  }
-  const url = URL.createObjectURL(file)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = fileName
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-  return 'downloaded'
-}
 
 function when(iso: string | null): string {
   if (!iso) return 'Not yet'
@@ -159,8 +139,10 @@ export function SettingsSheet({ data, dispatch, onClose, lastSavedAt, persisted 
         </p>
       )}
 
+      <CourseMapTools data={data} dispatch={dispatch} />
+
       <p className="credit">
-        Version 0.1 (Stage 1). Map imagery will be sourced from LINZ, CC BY 4.0.
+        Version 0.2 (Stage 2). Aerial imagery sourced from LINZ, CC BY 4.0.
       </p>
     </Sheet>
   )

@@ -1,5 +1,5 @@
 import type { AppData } from '../../types'
-import { appDataSchema, backupSchema, SCHEMA_VERSION } from './schema'
+import { appDataSchema, backupSchema, migrateAppData, SCHEMA_VERSION } from './schema'
 
 export interface BackupFile {
   app: 'fairway-caddie'
@@ -45,7 +45,7 @@ export function readBackup(text: string): RestoreResult {
     }
   }
 
-  const parsed = appDataSchema.safeParse(envelope.data.data)
+  const parsed = appDataSchema.safeParse(migrateAppData(envelope.data.data, envelope.data.schemaVersion))
   if (!parsed.success) {
     const issue = parsed.error.issues[0]
     const where = issue?.path.length ? ` (at ${issue.path.join('.')})` : ''
@@ -53,6 +53,7 @@ export function readBackup(text: string): RestoreResult {
   }
 
   const data = parsed.data as AppData
-  const summary = `${data.bag.length} clubs${data.profile.name ? ` for ${data.profile.name}` : ''}`
+  const mapped = data.courseMaps.reduce((n, m) => n + m.features.length, 0)
+  const summary = `${data.bag.length} clubs${data.profile.name ? ` for ${data.profile.name}` : ''}, ${mapped} mapped course feature${mapped === 1 ? '' : 's'}`
   return { ok: true, data, exportedAt: envelope.data.exportedAt, summary }
 }

@@ -1,6 +1,6 @@
 import { openDB, type IDBPDatabase } from 'idb'
 import type { AppData } from '../../types'
-import { appDataSchema, SCHEMA_VERSION } from './schema'
+import { appDataSchema, migrateAppData, SCHEMA_VERSION } from './schema'
 
 // Everything is kept on the phone in IndexedDB. Nothing is sent anywhere.
 
@@ -36,7 +36,7 @@ export type LoadResult =
 export async function loadAppData(): Promise<LoadResult> {
   const record = (await (await db()).get(STORE, KEY)) as StoredRecord | undefined
   if (!record) return { status: 'empty' }
-  const parsed = appDataSchema.safeParse(record.data)
+  const parsed = appDataSchema.safeParse(migrateAppData(record.data, record.schemaVersion ?? 1))
   if (!parsed.success) {
     return { status: 'invalid', reason: parsed.error.issues[0]?.message ?? 'Saved data is not valid.' }
   }
@@ -48,6 +48,18 @@ export async function saveAppData(data: AppData): Promise<string> {
   const record: StoredRecord = { schemaVersion: SCHEMA_VERSION, savedAt, data }
   await (await db()).put(STORE, record, KEY)
   return savedAt
+}
+
+/** Small device-only settings (like the map key). Not part of backups. */
+export async function getDeviceSetting(name: string): Promise<string | null> {
+  const v = await (await db()).get(STORE, `setting:${name}`)
+  return typeof v === 'string' ? v : null
+}
+
+export async function setDeviceSetting(name: string, value: string | null): Promise<void> {
+  const database = await db()
+  if (value === null) await database.delete(STORE, `setting:${name}`)
+  else await database.put(STORE, value, `setting:${name}`)
 }
 
 /** Keep a copy of unreadable data before anything overwrites it. */

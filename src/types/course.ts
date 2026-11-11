@@ -34,6 +34,7 @@ export interface Course {
   id: string
   name: string
   location: string
+  mapStart: { lng: number; lat: number }
   tees: TeeCard[]
   /** Distance markers on course, measured to the middle of the green. */
   distanceMarkers: { colour: string; toMiddleM: number }[]

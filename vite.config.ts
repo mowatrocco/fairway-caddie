@@ -30,10 +30,13 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2}'],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
     }),
   ],
+  // The map engine (MapLibre) is ~1 MB; it loads only when the map is opened and is cached for offline use.
+  build: { chunkSizeWarningLimit: 1200 },
   test: {
     include: ['src/tests/**/*.test.ts'],
     environment: 'node',

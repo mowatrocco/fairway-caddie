@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { useAppStore } from './state/useAppStore'
 import { CaddiePage } from './pages/CaddiePage'
 import { RoundPage } from './pages/RoundPage'
@@ -6,6 +6,9 @@ import { BagPage } from './pages/BagPage'
 import { StatsPage } from './pages/StatsPage'
 import { SettingsSheet } from './pages/SettingsSheet'
 import { BagIcon, CardIcon, ChartIcon, FlagIcon, GearIcon } from './components/Icons'
+
+// The map screen loads only when opened, keeping the app quick to start.
+const CourseMapPage = lazy(() => import('./pages/CourseMapPage'))
 
 type Tab = 'caddie' | 'round' | 'bag' | 'stats'
 
@@ -25,12 +28,25 @@ export default function App() {
   const store = useAppStore()
   const [tab, setTab] = useState<Tab>(tabFromHash)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [mapOpen, setMapOpen] = useState(() => window.location.hash === '#map')
 
   useEffect(() => {
-    const onHash = () => setTab(tabFromHash())
+    const onHash = () => {
+      setTab(tabFromHash())
+      setMapOpen(window.location.hash === '#map')
+    }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+
+  const openMap = () => {
+    history.replaceState(null, '', '#map')
+    setMapOpen(true)
+  }
+  const closeMap = () => {
+    history.replaceState(null, '', `#${tab}`)
+    setMapOpen(false)
+  }
 
   const go = (t: Tab) => {
     setTab(t)
@@ -70,7 +86,7 @@ export default function App() {
       )}
 
       <main className="main">
-        {tab === 'caddie' && <CaddiePage data={data} goToBag={() => go('bag')} />}
+        {tab === 'caddie' && <CaddiePage data={data} goToBag={() => go('bag')} openMap={openMap} />}
         {tab === 'round' && <RoundPage profile={data.profile} />}
         {tab === 'bag' && <BagPage bag={data.bag} units={data.profile.units} dispatch={dispatch} />}
         {tab === 'stats' && <StatsPage data={data} />}
@@ -89,6 +105,12 @@ export default function App() {
           </button>
         ))}
       </nav>
+
+      {mapOpen && (
+        <Suspense fallback={<div className="mapper mapper-loading">Loading map…</div>}>
+          <CourseMapPage data={data} dispatch={dispatch} onClose={closeMap} />
+        </Suspense>
+      )}
 
       {settingsOpen && (
         <SettingsSheet

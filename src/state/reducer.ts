@@ -1,4 +1,5 @@
 import type { AppData, Club, Profile } from '../types'
+import type { CourseFeature } from '../types/courseMap'
 import { confirmRough } from '../lib/calculations/clubs'
 
 export type Action =
@@ -10,6 +11,7 @@ export type Action =
   | { type: 'confirmRough'; id: string; as: 'carry' | 'total' }
   | { type: 'confirmAllRough'; as: 'carry' | 'total' }
   | { type: 'updateProfile'; profile: Partial<Profile> }
+  | { type: 'setCourseFeatures'; courseId: string; features: CourseFeature[] }
 
 export function reducer(state: AppData, action: Action): AppData {
   switch (action.type) {
@@ -43,5 +45,13 @@ export function reducer(state: AppData, action: Action): AppData {
       return { ...state, bag: state.bag.map((c) => confirmRough(c, action.as)) }
     case 'updateProfile':
       return { ...state, profile: { ...state.profile, ...action.profile } }
+    case 'setCourseFeatures': {
+      const updatedAt = new Date().toISOString()
+      const exists = state.courseMaps.some((m) => m.courseId === action.courseId)
+      const courseMaps = exists
+        ? state.courseMaps.map((m) => (m.courseId === action.courseId ? { ...m, features: action.features, updatedAt } : m))
+        : [...state.courseMaps, { courseId: action.courseId, features: action.features, updatedAt }]
+      return { ...state, courseMaps }
+    }
   }
 }

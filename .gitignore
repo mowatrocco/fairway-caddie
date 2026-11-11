@@ -26,3 +26,4 @@ dist-ssr
 dist-preview
 tests/e2e/screenshots
 tests/e2e/downloads
+tests/e2e/downloads-map

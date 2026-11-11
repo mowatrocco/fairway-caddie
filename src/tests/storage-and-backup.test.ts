@@ -14,7 +14,7 @@ describe('backup and restore', () => {
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.data).toEqual(data)
-      expect(result.summary).toBe('13 clubs for Rocco')
+      expect(result.summary).toBe('13 clubs for Rocco, 0 mapped course features')
     }
   })
 

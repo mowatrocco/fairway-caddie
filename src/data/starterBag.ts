@@ -1,5 +1,6 @@
 import type { AppData, Club, ClubCategory } from '../types'
 import { newId } from '../lib/id'
+import { emptyCourseMap } from '../lib/course/features'
 
 // Rocco's bag as supplied in the build brief.
 // The supplied distances were described as "approximate, not verified carry",
@@ -52,6 +53,7 @@ export function starterData(): AppData {
       units: 'metres',
     },
     bag: starterBag(),
+    courseMaps: [emptyCourseMap('south-head')],
   }
 }
 

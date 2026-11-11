@@ -1,17 +1,24 @@
 import type { AppData } from '../types'
 import { analyseGaps } from '../lib/calculations/gaps'
+import { checkHole } from '../lib/course/holeChecks'
+import { southHead } from '../data/courses/southHead'
 
 interface Props {
   data: AppData
   goToBag: () => void
+  openMap: () => void
 }
 
 /** Stage 1: the caddie is honest that it can't advise yet, and shows what's left to set up. */
-export function CaddiePage({ data, goToBag }: Props) {
+export function CaddiePage({ data, goToBag, openMap }: Props) {
   const clubs = data.bag.filter((c) => c.category !== 'putter')
   const report = analyseGaps(data.bag)
   const withDistance = clubs.length - report.missingIds.length
   const confirmedCarry = clubs.filter((c) => c.carryM !== null).length
+  const features = data.courseMaps.find((m) => m.courseId === southHead.id)?.features ?? []
+  const holeReports = Array.from({ length: 18 }, (_, i) => checkHole(features, i + 1, southHead))
+  const holesReady = holeReports.filter((r) => r.status === 'ready').length
+  const holesStarted = holeReports.filter((r) => r.status !== 'not-started').length
 
   const steps = [
     {
@@ -19,7 +26,14 @@ export function CaddiePage({ data, goToBag }: Props) {
       state: confirmedCarry === clubs.length ? 'done' : 'now',
       detail: `${withDistance} of ${clubs.length} clubs have a distance; ${confirmedCarry} confirmed as carry.`,
     },
-    { title: 'Map South Head', state: 'later', detail: 'Greens, tees and hazards traced, then checked on the course.' },
+    {
+      title: 'Map South Head',
+      state: holesReady === 18 ? 'done' : 'now',
+      detail:
+        holesStarted === 0
+          ? 'Trace greens, tees and hazards on aerial photos, then check them on the course.'
+          : `${holesReady} of 18 holes ready, ${holesStarted} started.`,
+    },
     { title: 'GPS distances', state: 'later', detail: 'Front, middle and back, with an accuracy badge.' },
     { title: 'Club advice', state: 'later', detail: 'Club, target and the reasons, for safe, normal or aggressive play.' },
   ] as const
@@ -52,6 +66,9 @@ export function CaddiePage({ data, goToBag }: Props) {
         ))}
       </ol>
 
+      <button className="btn btn-wide btn-primary" onClick={openMap}>
+        Open course map
+      </button>
       {confirmedCarry < clubs.length && (
         <button className="btn btn-wide" onClick={goToBag}>
           Finish setting up my bag
