@@ -71,7 +71,7 @@ export default function App() {
 
       <main className="main">
         {tab === 'caddie' && <CaddiePage data={data} goToBag={() => go('bag')} />}
-        {tab === 'round' && <RoundPage />}
+        {tab === 'round' && <RoundPage profile={data.profile} />}
         {tab === 'bag' && <BagPage bag={data.bag} units={data.profile.units} dispatch={dispatch} />}
         {tab === 'stats' && <StatsPage data={data} />}
       </main>

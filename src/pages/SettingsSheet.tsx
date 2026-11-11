@@ -4,6 +4,7 @@ import type { Action } from '../state/reducer'
 import { backupFileName, backupToJson, createBackup, readBackup, type RestoreResult } from '../lib/storage/backup'
 import { Sheet } from '../components/Sheet'
 import { Choice, NumberField, TextField } from '../components/Fields'
+import { southHead } from '../data/courses/southHead'
 
 interface Props {
   data: AppData
@@ -79,14 +80,13 @@ export function SettingsSheet({ data, dispatch, onClose, lastSavedAt, persisted 
           onChange={(handicap) => dispatch({ type: 'updateProfile', profile: { handicap } })}
           hint="Optional"
         />
-        <TextField
-          label="Usual tees"
-          name="tees"
-          value={p.usualTees}
-          placeholder="e.g. White"
-          onChange={(usualTees) => dispatch({ type: 'updateProfile', profile: { usualTees } })}
-        />
       </div>
+      <Choice
+        label="Usual tees at South Head"
+        value={p.usualTees}
+        options={[{ value: '', label: 'Not set' }, ...southHead.tees.map((t) => ({ value: t.id, label: t.name }))]}
+        onChange={(usualTees) => dispatch({ type: 'updateProfile', profile: { usualTees } })}
+      />
       <Choice label="Distances in" value={p.units} options={unitOptions} onChange={(units) => dispatch({ type: 'updateProfile', profile: { units } })} />
 
       <h3 className="group-title">Your data</h3>

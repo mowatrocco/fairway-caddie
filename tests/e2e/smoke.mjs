@@ -9,7 +9,8 @@ const ROOT = resolve(import.meta.dirname, '../..')
 const SHOTS = join(ROOT, 'tests/e2e/screenshots')
 const DOWNLOADS = join(ROOT, 'tests/e2e/downloads')
 const PORT = 4179
-const URL = `http://localhost:${PORT}/`
+const BASE = process.env.BASE_PATH ?? '/'
+const URL = `http://localhost:${PORT}${BASE}`
 const CHROME = process.env.CHROME_PATH ?? '/usr/bin/google-chrome'
 
 const IPHONE_15 = { width: 393, height: 852, deviceScaleFactor: 3, isMobile: true, hasTouch: true }
@@ -169,7 +170,17 @@ try {
   await page.screenshot({ path: join(SHOTS, '04-settings-iphone15.png') })
   await page.click('button[aria-label="Close"]')
 
-  // 10. Small screen layout: nothing wider than the screen
+  // 10. Scorecard
+  await clickText('.tab', 'Round')
+  await settle()
+  t = await text()
+  check(t.includes('5419') && t.includes('par 72'), 'Round tab shows the White card: 5419 m, par 72')
+  await clickText('.chip', 'Blue')
+  await settle()
+  check((await text()).includes('5751'), 'switching to Blue shows 5751 m')
+  await page.screenshot({ path: join(SHOTS, '07-scorecard-iphone15.png'), fullPage: true })
+
+  // 11. Small screen layout: nothing wider than the screen
   await page.setViewport(IPHONE_SE)
   for (const tab of ['Caddie', 'Round', 'My Bag', 'Stats']) {
     await clickText('.tab', tab)
@@ -185,7 +196,7 @@ try {
   check(sheetOverflow <= 0, 'club editor fits the iPhone SE width')
   await page.screenshot({ path: join(SHOTS, '06-editor-iphoneSE.png') })
 
-  // 11. Touch targets
+  // 12. Touch targets
   const small = await page.evaluate(() =>
     [...document.querySelectorAll('button, input, textarea')]
       .filter((el) => el.offsetParent !== null)
@@ -194,7 +205,7 @@ try {
   )
   check(small === 0, `all visible controls are at least 40 px (${small} too small)`)
 
-  // 12. Offline support registered
+  // 13. Offline support registered
   const sw = await page.evaluate(async () => {
     if (!('serviceWorker' in navigator)) return false
     const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((r) => setTimeout(() => r(null), 5000))])

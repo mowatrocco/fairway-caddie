@@ -562,6 +562,63 @@ button {
   background: var(--green-edge);
 }
 
+/* ---------- Scorecard ---------- */
+
+.card-summary {
+  margin: 20px 0 12px;
+  color: var(--ink-2);
+}
+
+.card-total {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 30px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.scorecard {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--display);
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scorecard th,
+.scorecard td {
+  padding: 9px 8px;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+}
+
+.scorecard th:first-child {
+  text-align: left;
+  padding-left: 0;
+}
+
+.scorecard thead th {
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.scorecard tbody th {
+  font-weight: 600;
+}
+
+.scorecard .si {
+  color: var(--ink-2);
+}
+
+.scorecard .subtotal th,
+.scorecard .subtotal td {
+  font-weight: 700;
+  background: var(--surface);
+  border-bottom: 2px solid var(--line);
+}
+
 /* ---------- Sheet ---------- */
 
 .sheet-backdrop {
