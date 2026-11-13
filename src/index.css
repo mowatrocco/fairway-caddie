@@ -1565,3 +1565,196 @@ html.mapper-open body {
 .download {
   margin-top: 12px;
 }
+
+/* ---------- Club advice (Stage 4) ---------- */
+
+.advice-wrap {
+  margin-top: 20px;
+}
+
+.advice-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.advice-head .section-title {
+  margin: 0;
+}
+
+.strategy {
+  display: flex;
+  gap: 6px;
+}
+
+.strategy .chip {
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 15px;
+}
+
+.advice {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--flag);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.advice-quiet {
+  border-left-color: var(--line);
+}
+
+.advice p {
+  margin: 0;
+}
+
+.advice-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.advice-club {
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.05;
+}
+
+.advice .advice-aim {
+  margin-top: 6px;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--flag);
+}
+
+.advice .advice-nums,
+.advice .advice-odds {
+  margin-top: 4px;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.advice .advice-odds {
+  color: var(--ink-2);
+}
+
+.advice .advice-watch {
+  margin-top: 8px;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.advice-why {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.advice-why li + li {
+  margin-top: 4px;
+}
+
+.advice .advice-alt {
+  margin-top: 10px;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+.advice .field-hint,
+.advice .msg {
+  margin-top: 10px;
+}
+
+.advice-conf {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.advice p.advice-conf {
+  display: inline-block;
+  margin-top: 10px;
+}
+
+.conf-high {
+  background: var(--green);
+  color: var(--ink);
+}
+
+.conf-medium {
+  background: var(--surface-2);
+  color: var(--flag);
+}
+
+.conf-low {
+  background: rgba(236, 122, 100, 0.16);
+  color: var(--danger);
+}
+
+.advice-more {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.advice-more summary {
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.advice-more ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  line-height: 1.4;
+}
+
+.strategy-table {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.strategy-table th,
+.strategy-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.strategy-table thead th {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.strategy-table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.strategy-table .row-on th,
+.strategy-table .row-on td {
+  background: var(--surface);
+}
+
+.strategy-table .row-on th {
+  box-shadow: inset 3px 0 0 var(--flag);
+}
+
+.st-aim {
+  display: block;
+  color: var(--ink-2);
+  font-size: 13px;
+}

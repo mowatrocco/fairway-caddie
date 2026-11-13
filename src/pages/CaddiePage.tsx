@@ -6,7 +6,11 @@ import { greenDistances, type GreenDistances } from '../lib/geo/green'
 import { analyseGaps } from '../lib/calculations/gaps'
 import { formatDistance, fromDisplay, toDisplay, unitLabel } from '../lib/calculations/units'
 import { checkHole, greenMiddle } from '../lib/course/holeChecks'
-import { findGreen, findGreenMiddle, pointOf, ringOf, TRUST_LABEL } from '../lib/course/features'
+import { findGreen, findGreenMiddle, findLineOfPlay, lineOf, pointOf, ringOf, TRUST_LABEL } from '../lib/course/features'
+import { isHazard } from '../lib/course/autoHoles'
+import { recommend, type CaddieResult } from '../lib/caddie/engine'
+import type { Strategy } from '../lib/caddie/scoring'
+import { AdviceCard, StrategyPicker, StrategyTable } from '../components/caddie/AdviceCard'
 import { analyseBoundaries, analyseHazards } from '../lib/course/hazards'
 import { southHead } from '../data/courses/southHead'
 import { useLiveGps } from '../lib/gps/useLiveGps'
@@ -17,6 +21,8 @@ import { getDeviceSetting, setDeviceSetting } from '../lib/storage/db'
 import { GpsBadge, GreenNumbers, HazardList } from '../components/caddie/readouts'
 import { NumberField } from '../components/Fields'
 import type { CourseFeature } from '../types/courseMap'
+import type { TrustLevel } from '../types/course'
+import type { Club } from '../types'
 
 const CaddieMap = lazy(() => import('../components/caddie/CaddieMap'))
 
@@ -54,16 +60,28 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
   const [manualPos, setManualPos] = useState<LngLat | null>(null)
   const [measure, setMeasure] = useState<LngLat | null>(null)
   const [rangefinder, setRangefinder] = useState<Record<number, number | null>>({})
+  const [strategy, setStrategyState] = useState<Strategy>('normal')
 
   useEffect(() => {
     getDeviceSetting('gpsOn').then((v) => setGpsOn(v === 'yes'), () => setGpsOn(false))
     getDeviceSetting('keepAwake').then((v) => setKeepAwake(v === 'yes'), () => {})
+    getDeviceSetting('strategy').then(
+      (v) => {
+        if (v === 'safe' || v === 'normal' || v === 'aggressive') setStrategyState(v)
+      },
+      () => {},
+    )
   }, [])
+  const setStrategy = (s: Strategy) => {
+    setStrategyState(s)
+    setDeviceSetting('strategy', s)
+  }
 
   const gps = useLiveGps(Boolean(gpsOn) && anyGreen)
   const wake = useWakeLock(keepAwake && anyGreen)
   const status = describeFix(gps.fix, gps.now, gps.base)
   const onTapMap = useCallback((p: LngLat) => setMeasure(p), [])
+  const [plan, setPlan] = useState<{ aim: LngLat; zone: LngLat[] } | null>(null)
 
   if (!anyGreen) return <SetupView data={data} features={features} goToBag={goToBag} openMap={openMap} />
 
@@ -104,6 +122,24 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
       : false
 
   const report = checkHole(features, hole, COURSE)
+
+  const adviceInput: AdviceInput | null =
+    ring && middle && green && !onGreen
+      ? {
+          features,
+          hole,
+          green: ring,
+          middle,
+          greenTrust: green.trust,
+          position: farAway ? null : position,
+          source: farAway || !position ? 'none' : manualPos ? 'manual' : 'gps',
+          accuracyM: manualPos || status.kind !== 'fix' ? null : status.accuracyM,
+          stale: !manualPos && status.kind === 'fix' && status.stale,
+          rf,
+          clubs: data.bag,
+          strategy,
+        }
+      : null
 
   return (
     <section className="page caddie" aria-labelledby="caddie-title">
@@ -200,6 +236,9 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
               GPS is fair: distances could be out by up to {formatDistance(fairPm, units)} {u}.
             </p>
           )}
+          {adviceInput && (position || rf !== null) && (
+            <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} />
+          )}
         </>
       ) : (
         <>
@@ -210,6 +249,7 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
               centre={middle ?? [COURSE.mapStart.lng, COURSE.mapStart.lat]}
               golfer={position ? { point: position, accuracyM: manualPos ? null : (gps.fix?.accuracyM ?? null) } : null}
               measure={measure}
+              plan={view === 'map' ? plan : null}
               onTap={onTapMap}
             />
           </Suspense>
@@ -246,6 +286,9 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
             <p className="field-hint">Tap the map to measure to any spot.</p>
           )}
           {dists && !farAway && !onGreen && <GreenNumbers d={dists} units={units} roughM={roughM} compact />}
+          {adviceInput && position && !farAway && (
+            <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} onPlan={setPlan} table />
+          )}
         </>
       )}
 
@@ -265,7 +308,7 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
             unit={u}
             value={rf === null ? null : toDisplay(rf, units)}
             onChange={(v) => setRangefinder((r) => ({ ...r, [hole]: v === null ? null : fromDisplay(v, units) }))}
-            hint="Type in your rangefinder reading. Club advice will use it from the next stage."
+            hint="Type in your rangefinder reading. Club advice uses it in place of the green middle."
           />
           {rfMismatch && (
             <p className="msg msg-warn">
@@ -342,7 +385,11 @@ function SetupView({
           : `${holesReady} of 18 holes ready, ${holesStarted} started.`,
     },
     { title: 'GPS distances', state: 'later', detail: 'Appear here as soon as a green is traced.' },
-    { title: 'Club advice', state: 'later', detail: 'Club, target and the reasons, for safe, normal or aggressive play.' },
+    {
+      title: 'Club advice',
+      state: 'later',
+      detail: 'Club, aim and the reasons, for safe, normal or aggressive play. Works once a green is traced and your clubs have distances.',
+    },
   ] as const
 
   return (
@@ -379,5 +426,85 @@ function SetupView({
         </button>
       )}
     </section>
+  )
+}
+
+interface AdviceInput {
+  features: CourseFeature[]
+  hole: number
+  green: LngLat[]
+  middle: LngLat
+  greenTrust: TrustLevel
+  position: LngLat | null
+  source: 'gps' | 'manual' | 'none'
+  accuracyM: number | null
+  stale: boolean
+  rf: number | null
+  clubs: Club[]
+  strategy: Strategy
+}
+
+/** Runs the caddie engine (only when something it uses has changed) and shows the call. */
+function Advice({
+  input,
+  units,
+  onStrategy,
+  goToBag,
+  onPlan,
+  table,
+}: {
+  input: AdviceInput
+  units: AppData['profile']['units']
+  onStrategy: (s: Strategy) => void
+  goToBag: () => void
+  onPlan?: (p: { aim: LngLat; zone: LngLat[] } | null) => void
+  table?: boolean
+}) {
+  const { features, hole, green, middle, greenTrust, position, source, accuracyM, stale, rf, clubs, strategy } = input
+  // GPS readings jiggle by a metre or so every second; round to about 2 m so the advice only reworks on real moves.
+  const lng = position ? Math.round(position[0] * 5e4) / 5e4 : null
+  const lat = position ? Math.round(position[1] * 5e4) / 5e4 : null
+  const acc = accuracyM === null ? null : Math.round(accuracyM)
+  const result: CaddieResult = useMemo(
+    () =>
+      recommend({
+        position: lng === null || lat === null ? null : [lng, lat],
+        positionSource: source,
+        positionAccuracyM: acc,
+        positionStale: stale,
+        green,
+        greenMiddle: middle,
+        flagDistanceM: rf,
+        corners: lineOf(findLineOfPlay(features, hole))?.slice(1, -1) ?? [],
+        hazards: features.filter(isHazard),
+        greenTrust,
+        clubs,
+        strategy,
+      }),
+    // green and middle come from features and hole
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [features, hole, lng, lat, source, acc, stale, rf, clubs, strategy, greenTrust],
+  )
+  useEffect(() => {
+    if (!onPlan) return
+    onPlan(result.kind === 'advice' ? { aim: result.primary.aim, zone: result.primary.zone } : null)
+  }, [result, onPlan])
+  useEffect(() => () => onPlan?.(null), [onPlan])
+
+  const noDistances = result.kind === 'none' && !clubs.some((c) => c.category !== 'putter' && (c.carryM ?? c.roughM) !== null)
+  return (
+    <div className="advice-wrap">
+      <div className="advice-head">
+        <h2 className="section-title">Club advice</h2>
+        {result.kind === 'advice' && <StrategyPicker value={strategy} onChange={onStrategy} />}
+      </div>
+      <AdviceCard result={result} units={units} />
+      {noDistances && (
+        <button className="btn btn-wide" onClick={goToBag}>
+          Add club distances
+        </button>
+      )}
+      {table && <StrategyTable result={result} units={units} />}
+    </div>
   )
 }

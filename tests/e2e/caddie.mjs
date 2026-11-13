@@ -1,4 +1,4 @@
-// Browser test for the Caddie screen (Stage 3), at iPhone size, with simulated GPS.
+// Browser test for the Caddie screen (Stages 3 and 4), at iPhone size, with simulated GPS.
 // Uses a made-up hole near the clubhouse; NOT real South Head geometry.
 // LINZ photos are faked with a tiny image so the offline download can be tested here.
 // Usage: npm run build && npm run test:e2e:caddie
@@ -73,7 +73,7 @@ const browser = await puppeteer.launch({
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms))
 
 /** A page with the made-up course loaded into its storage. */
-async function preparedPage(context, { linzKey = null } = {}) {
+async function preparedPage(context, { linzKey = null, noDistances = false } = {}) {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (e) => errors.push(String(e)))
@@ -92,7 +92,7 @@ async function preparedPage(context, { linzKey = null } = {}) {
   await page.waitForSelector('.tabbar')
   await settle(500)
   await page.evaluate(
-    async (features, key) => {
+    async (features, key, noDistances) => {
       const req = indexedDB.open('fairway-caddie')
       const db = await new Promise((r) => (req.onsuccess = () => r(req.result)))
       const store = () => db.transaction('kv', 'readwrite').objectStore('kv')
@@ -102,12 +102,14 @@ async function preparedPage(context, { linzKey = null } = {}) {
       })
       rec.data.courseMaps[0].features = features
       rec.data.profile.usualTees = 'white'
+      if (noDistances) for (const c of rec.data.bag) Object.assign(c, { carryM: null, totalM: null, roughM: null, confidence: 'unknown' })
       await new Promise((r) => (store().put(rec, 'appData').onsuccess = r))
       if (key) await new Promise((r) => (store().put(key, 'setting:linzKey').onsuccess = r))
       db.close()
     },
     FEATURES,
     linzKey,
+    noDistances,
   )
   await page.reload({ waitUntil: 'networkidle0' })
   await page.waitForSelector('.tabbar')
@@ -167,15 +169,44 @@ try {
   check(/Bunker right\s*11\d reach, 12\d carry/.test(t.replace(/\n/g, ' ')), 'bunker 120 m out (drawn on another hole) shows as right, reach ~116, carry ~124')
   check(/Out of bounds left\s*25 m off your line/.test(t.replace(/\n/g, ' ')), 'fence shows as out of bounds left, 25 m off your line')
 
+  // 3b. Club advice (Stage 4)
+  const advice = async () => (await page.$eval('[data-testid="advice"]', (n) => n.innerText)).replace(/\n/g, ' ')
+  let a = await advice()
+  const BAG_NAMES = ['5 Iron', '7 Iron', '8 Iron', '9 Iron', 'Pitching Wedge']
+  check(BAG_NAMES.some((n) => a.includes(n)), `advice names a club from your bag (${a.slice(0, 60)}…)`)
+  check(/Aim .*(middle|left|right)/i.test(a) && /Carry \d+ m, finishes ~\d+ m/.test(a), 'advice gives an aim and carry/finish distances')
+  check(a.includes('(roll estimated)'), 'roll is marked as estimated (no measured totals yet)')
+  check(a.includes('Confidence: Medium') && a.includes('rough'), 'confidence is medium, and says your club distances are rough')
+  check(/Wind and slope aren't included/.test(a), 'says wind and slope are not included')
+  check(Boolean(await page.$('.strategy [aria-checked="true"]')) && (await page.$eval('.strategy [aria-checked="true"]', (n) => n.textContent)) === 'Normal', 'Normal strategy is picked by default')
+  await page.screenshot({ path: join(SHOTS, '25-caddie-advice-iphone15.png'), fullPage: true })
+  await clickText('.strategy button', 'Safe')
+  await settle()
+  const safeA = await advice()
+  check((await page.$eval('.strategy [aria-checked="true"]', (n) => n.textContent)) === 'Safe', 'tapping Safe switches strategy')
+  const pen = (s) => (/penalty under 1%/.test(s) ? 0 : Number(/penalty (\d+)%/.exec(s)?.[1] ?? 99))
+  check(pen(safeA) <= 5, `Safe keeps the penalty chance at 5% or less (${pen(safeA)}%)`)
+  await clickText('.strategy button', 'Aggressive')
+  await settle()
+  check((await advice()) !== '', 'Aggressive also gives advice')
+  await clickText('.strategy button', 'Safe')
+  await settle()
+
   // 4. Walking closer updates the numbers
   await goTo(dest(G, 200, 100))
   check(Math.abs((await middle()) - 100) <= 1, `walking to 100 m out updates the middle to ${await middle()}`)
+  await goTo(dest(G, 200, 40))
+  a = await advice()
+  check(a.includes('Part swing') && a.includes('shortest'), `40 m out (inside your shortest full club) it says part swing (${a.slice(0, 70)}…)`)
+  await goTo(dest(G, 200, 100))
 
   // 5. Rough GPS is flagged, never shown as exact
   await goTo(dest(G, 200, 100), 25)
   t = await text()
   check(t.includes('GPS ±25 m, poor') && t.includes('GPS is rough here (±25 m)'), 'poor GPS: badge and warning show ±25 m')
   check(Boolean(await page.$('.green-numbers-rough')), 'poor GPS: numbers are dimmed and carry a ±')
+  a = await advice()
+  check(a.includes('Confidence: Low') && /GPS/.test(a), 'poor GPS: advice confidence drops to Low and says why')
   await page.screenshot({ path: join(SHOTS, '21-caddie-poor-gps-iphone15.png') })
   await goTo(P, 4)
 
@@ -227,6 +258,25 @@ try {
   check((await text()).includes('GPS ±4 m'), 'back to GPS')
   await clickText('.seg button', 'Quick')
 
+  // 9b. Map view shows the plan and all three strategies
+  await clickText('.seg button', 'Map')
+  await page.waitForSelector('.strategy-table')
+  await settle(800)
+  const rows = await page.$$eval('.strategy-table tbody tr', (rs) => rs.map((r) => r.innerText.replace(/\n/g, ' ')))
+  check(rows.length === 3 && rows[0].startsWith('Safe') && rows[2].startsWith('Aggressive'), 'map view lists Safe, Normal and Aggressive side by side')
+  const planCount = await page.evaluate(async () => {
+    const s = window.__maplibre.getSource('plan')
+    const d = await s.getData()
+    return d.features.map((f) => f.geometry.type).sort().join(',')
+  })
+  check(planCount === 'LineString,Point,Polygon', `map draws the aim line, aim point and landing zone (${planCount})`)
+  await page.screenshot({ path: join(SHOTS, '26-caddie-map-plan-iphone15.png') })
+  await clickText('.seg button', 'Quick')
+  await page.reload({ waitUntil: 'networkidle0' })
+  await page.waitForSelector('[data-testid="advice"]', { timeout: 10000 })
+  await settle(800)
+  check((await page.$eval('.strategy [aria-checked="true"]', (n) => n.textContent)) === 'Safe', 'the strategy you picked is remembered after reopening')
+
   // 10. Keep-screen-on switch is offered
   check((await text()).includes('Keep screen on'), 'keep-screen-on switch is offered')
 
@@ -250,6 +300,23 @@ try {
   await settle(1500)
   const bt = await bh.text()
   check(bt.includes('Location blocked') && bt.includes('Location Services'), 'with location blocked, explains how to allow it')
+  await b.page.type('input[name="rangefinder"]', '128')
+  await settle()
+  const da = (await b.page.$eval('[data-testid="advice"]', (n) => n.innerText)).replace(/\n/g, ' ')
+  check(da.includes('rangefinder') && da.includes('Confidence: Low') && !/Aim /.test(da), `no position: advice uses the rangefinder distance only, no aim, low confidence (${da.slice(0, 80)}…)`)
+  await b.page.screenshot({ path: join(SHOTS, '27-caddie-distance-only-iphone15.png') })
+
+  // 12b. No club distances: says so instead of guessing
+  const nd = await browser.createBrowserContext()
+  await nd.overridePermissions(ORIGIN, ['geolocation'])
+  const n = await preparedPage(nd, { noDistances: true })
+  await n.page.setGeolocation({ latitude: P[1], longitude: P[0], accuracy: 4 })
+  await helpers(n.page).clickText('button', 'Turn on GPS')
+  await settle(1200)
+  const nt = await helpers(n.page).text()
+  check(nt.includes('Add club distances') && !BAG_NAMES.some((x) => nt.includes(x)), 'with no club distances it asks for them and names no club')
+  check(n.errors.length === 0, `no-distances run: no console errors${n.errors.length ? ': ' + n.errors.join(' | ') : ''}`)
+  await nd.close()
   await blocked.close()
 
   // 13. Offline photos: save the course, then go offline and still see the map

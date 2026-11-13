@@ -15,11 +15,12 @@ interface Props {
   centre: LngLat
   golfer: { point: LngLat; accuracyM: number | null } | null
   measure: LngLat | null
+  plan: { aim: LngLat; zone: LngLat[] } | null
   onTap: (p: LngLat) => void
 }
 
 /** The hole on aerial photos, turned so you play up the screen, with you and any measured point. */
-export default function CaddieMap({ features, hole, centre, golfer, measure, onTap }: Props) {
+export default function CaddieMap({ features, hole, centre, golfer, measure, plan, onTap }: Props) {
   const el = useRef<HTMLDivElement>(null)
   const adapter = useRef<MapAdapter | null>(null)
   const [key, setKey] = useState<string | null | undefined>(undefined)
@@ -60,7 +61,8 @@ export default function CaddieMap({ features, hole, centre, golfer, measure, onT
   useEffect(() => {
     adapter.current?.setGolfer(golfer?.point ?? null, golfer?.accuracyM ?? null)
     adapter.current?.setMeasure(measure, measure ? (golfer?.point ?? null) : null)
-  }, [golfer, measure, ready])
+    adapter.current?.setPlan(golfer?.point ?? null, plan?.aim ?? null, plan?.zone ?? null)
+  }, [golfer, measure, plan, ready])
 
   // Frame the hole (tee at the bottom, green at the top) when the hole changes.
   useEffect(() => {

@@ -46,6 +46,8 @@ export interface MapAdapter {
   setGolfer(point: LngLat | null, accuracyM: number | null): void
   /** A measured point (with a line from `from`), or null to clear. */
   setMeasure(point: LngLat | null, from: LngLat | null): void
+  /** The caddie's plan: line from you to the aim point, and where most shots finish. */
+  setPlan(from: LngLat | null, aim: LngLat | null, zone: LngLat[] | null): void
   onTapPoint(cb: (p: LngLat) => void): () => void
   getCentre(): LngLat
   jumpTo(centre: LngLat, zoom?: number, bearing?: number): void
@@ -135,6 +137,7 @@ export function createMap(container: HTMLElement, opts: { key: string | null; ce
     map.addSource('edit', { type: 'geojson', data: empty })
     map.addSource('golfer', { type: 'geojson', data: empty })
     map.addSource('measure', { type: 'geojson', data: empty })
+    map.addSource('plan', { type: 'geojson', data: empty })
 
     const isPoly = ['==', ['geometry-type'], 'Polygon'] as const
     const isLine = ['==', ['geometry-type'], 'LineString'] as const
@@ -209,6 +212,34 @@ export function createMap(container: HTMLElement, opts: { key: string | null; ce
         'circle-stroke-color': '#121614',
         'circle-stroke-width': 2,
       },
+    })
+    map.addLayer({
+      id: 'plan-zone',
+      type: 'fill',
+      source: 'plan',
+      filter: ['==', ['geometry-type'], 'Polygon'],
+      paint: { 'fill-color': '#f2c230', 'fill-opacity': 0.18 },
+    })
+    map.addLayer({
+      id: 'plan-zone-edge',
+      type: 'line',
+      source: 'plan',
+      filter: ['==', ['geometry-type'], 'Polygon'],
+      paint: { 'line-color': '#f2c230', 'line-width': 1.5 },
+    })
+    map.addLayer({
+      id: 'plan-line',
+      type: 'line',
+      source: 'plan',
+      filter: ['==', ['geometry-type'], 'LineString'],
+      paint: { 'line-color': '#f2c230', 'line-width': 2.5, 'line-dasharray': [3, 2] },
+    })
+    map.addLayer({
+      id: 'plan-aim',
+      type: 'circle',
+      source: 'plan',
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: { 'circle-radius': 7, 'circle-color': '#121614', 'circle-stroke-color': '#f2c230', 'circle-stroke-width': 3 },
     })
     map.addLayer({
       id: 'measure-line',
@@ -287,6 +318,13 @@ export function createMap(container: HTMLElement, opts: { key: string | null; ce
       const feats: unknown[] = [{ type: 'Feature', geometry: { type: 'Point', coordinates: point }, properties: {} }]
       if (from) feats.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [from, point] }, properties: {} })
       set('measure', { type: 'FeatureCollection', features: feats })
+    },
+    setPlan(from, aim, zone) {
+      if (!aim) return set('plan', empty)
+      const feats: unknown[] = [{ type: 'Feature', geometry: { type: 'Point', coordinates: aim }, properties: {} }]
+      if (from) feats.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [from, aim] }, properties: {} })
+      if (zone && zone.length > 2) feats.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...zone, zone[0]]] }, properties: {} })
+      set('plan', { type: 'FeatureCollection', features: feats })
     },
     onTapPoint(cb) {
       const handler = (e: maplibregl.MapMouseEvent) => cb([e.lngLat.lng, e.lngLat.lat])
