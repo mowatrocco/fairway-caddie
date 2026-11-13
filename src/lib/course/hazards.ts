@@ -4,7 +4,8 @@ import type { LngLat } from '../geo/geodesic'
 import { localPlane, type XY } from '../geo/plane'
 import { KINDS, vertices } from './features'
 
-// Hazards measured along your line to the target (normally the green middle):
+// Hazards measured along your line to the target (normally the green middle).
+// Which hole a hazard was drawn on doesn't matter here; only where it sits.
 // "reach" = how far to get to its near edge, "carry" = how far to fly over its far edge.
 // Measured in a flat grid centred on you; over a golf hole the error is millimetres.
 
@@ -61,9 +62,12 @@ const along = (f: Frame, v: XY) => v[0] * f.dir[0] + v[1] * f.dir[1]
 /** Positive = left of your line, negative = right. */
 const across = (f: Frame, v: XY) => f.dir[0] * v[1] - f.dir[1] * v[0]
 
+/**
+ * Hazards near your line from where you are to the target. Hole labels are ignored:
+ * anything on your actual line counts, even if it was drawn on another hole.
+ */
 export function analyseHazards(
   features: CourseFeature[],
-  hole: number,
   from: LngLat,
   target: LngLat,
   opts: HazardOptions = {},
@@ -75,7 +79,7 @@ export function analyseHazards(
 
   const out: HazardReading[] = []
   for (const feat of features) {
-    if (!AREA_KINDS.includes(feat.kind) || !feat.holes.includes(hole)) continue
+    if (!AREA_KINDS.includes(feat.kind)) continue
     const pts = vertices(feat).map(f.toXY)
     const a = pts.map((p) => along(f, p))
     const c = pts.map((p) => across(f, p))
@@ -105,7 +109,6 @@ export function analyseHazards(
 /** Out-of-bounds lines near your line between you and the target. */
 export function analyseBoundaries(
   features: CourseFeature[],
-  hole: number,
   from: LngLat,
   target: LngLat,
   opts: { maxClearanceM?: number } = {},
@@ -116,7 +119,7 @@ export function analyseBoundaries(
 
   const out: BoundaryReading[] = []
   for (const feat of features) {
-    if (feat.kind !== 'out-of-bounds' || !feat.holes.includes(hole) || feat.geometry.type !== 'LineString') continue
+    if (feat.kind !== 'out-of-bounds' || feat.geometry.type !== 'LineString') continue
     const pts = feat.geometry.coordinates.map(f.toXY)
     let best: { clear: number; at: number; side: Side } | null = null
     let sawLeft = false

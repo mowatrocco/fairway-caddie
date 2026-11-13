@@ -156,6 +156,8 @@ try {
   await settle(400)
   let t = await text()
   check(t.includes('Bunker') && t.includes('Traced from imagery'), 'tapping the bunker selects it and shows its trust label')
+  const counts = await page.$eval('[data-testid="counts-for"]', (n) => n.textContent).catch(() => '')
+  check(counts.startsWith('Counts for hole 1,'), `the bunker says which holes it counts for ("${counts}")`)
   await page.screenshot({ path: join(SHOTS, '11-map-selected-iphone15.png') })
   await clickText('button', 'Delete')
   await clickText('button', 'Delete Bunker')

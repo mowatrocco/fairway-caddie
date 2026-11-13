@@ -46,7 +46,8 @@ const FEATURES = [
   feat('tb', 'tee', { type: 'Point', coordinates: dest(G, 200, 324) }, { teeId: 'blue' }),
   feat('tw', 'tee', { type: 'Point', coordinates: dest(G, 200, 315) }, { teeId: 'white' }),
   feat('ty', 'tee', { type: 'Point', coordinates: dest(G, 200, 301) }, { teeId: 'yellow' }),
-  feat('b1', 'bunker', { type: 'Polygon', coordinates: [bunker] }),
+  // Deliberately drawn on the wrong hole (5): it sits on hole 1's line, so it must still show there.
+  { ...feat('b1', 'bunker', { type: 'Polygon', coordinates: [bunker] }), holes: [5] },
   feat('ob1', 'out-of-bounds', { type: 'LineString', coordinates: fence }),
   { ...feat('t2', 'tee', { type: 'Point', coordinates: hole2Tee }, { teeId: 'white' }), holes: [2] },
 ]
@@ -163,7 +164,7 @@ try {
   await page.screenshot({ path: join(SHOTS, '20-caddie-quick-iphone15.png') })
 
   // 3. Hazards along the line
-  check(/Bunker right\s*11\d reach, 12\d carry/.test(t.replace(/\n/g, ' ')), 'bunker 120 m out shows as right, reach ~116, carry ~124')
+  check(/Bunker right\s*11\d reach, 12\d carry/.test(t.replace(/\n/g, ' ')), 'bunker 120 m out (drawn on another hole) shows as right, reach ~116, carry ~124')
   check(/Out of bounds left\s*25 m off your line/.test(t.replace(/\n/g, ' ')), 'fence shows as out of bounds left, 25 m off your line')
 
   // 4. Walking closer updates the numbers

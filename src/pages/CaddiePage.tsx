@@ -93,8 +93,8 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
   const dists: GreenDistances | null = position && ring ? greenDistances(ring, position, verifiedMiddle) : null
   const farAway = dists !== null && dists.middleM > WRONG_HOLE_M
   const onGreen = dists !== null && !farAway && dists.frontM === null
-  const hazards = position && middle && !farAway ? analyseHazards(features, hole, position, middle) : []
-  const boundaries = position && middle && !farAway ? analyseBoundaries(features, hole, position, middle) : []
+  const hazards = position && middle && !farAway ? analyseHazards(features, position, middle) : []
+  const boundaries = position && middle && !farAway ? analyseBoundaries(features, position, middle) : []
   const suggestion = manualPos ? null : suggestHole(features, gps.fix, hole)
 
   const rf = rangefinder[hole] ?? null

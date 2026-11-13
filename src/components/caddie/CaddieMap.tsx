@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CourseFeature } from '../../types/courseMap'
 import type { LngLat } from '../../lib/geo/geodesic'
 import { bearingDeg } from '../../lib/geo/geodesic'
 import { createMap, holePoints, type MapAdapter } from '../../lib/mapping/mapAdapter'
 import { pointOf } from '../../lib/course/features'
 import { greenMiddle } from '../../lib/course/holeChecks'
+import { appliesToHole, hazardHoles } from '../../lib/course/autoHoles'
+import { southHead } from '../../data/courses/southHead'
 import { getDeviceSetting } from '../../lib/storage/db'
 
 interface Props {
@@ -46,9 +48,14 @@ export default function CaddieMap({ features, hole, centre, golfer, measure, onT
     }
   }, [key])
 
+  const hereIds = useMemo(() => {
+    const auto = hazardHoles(features, [southHead.mapStart.lng, southHead.mapStart.lat])
+    return new Set(features.filter((f) => appliesToHole(f, hole, auto)).map((f) => f.id))
+  }, [features, hole])
+
   useEffect(() => {
-    adapter.current?.setFeatures(features, hole, null)
-  }, [features, hole, ready])
+    adapter.current?.setFeatures(features, hereIds, null)
+  }, [features, hereIds, ready])
 
   useEffect(() => {
     adapter.current?.setGolfer(golfer?.point ?? null, golfer?.accuracyM ?? null)

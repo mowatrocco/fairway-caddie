@@ -19,7 +19,7 @@ function blob(c: LngLat, r: number): LngLat[] {
 describe('hazards along your line', () => {
   it('a bunker short-right: reach and carry along the line, on the right', () => {
     const f = [makeFeature('bunker', blob(at(130, -12), 5), 3)]
-    const [h] = analyseHazards(f, 3, me, green)
+    const [h] = analyseHazards(f, me, green)
     expect(h.side).toBe('right')
     expect(h.reachM).toBeGreaterThan(124)
     expect(h.reachM).toBeLessThan(126)
@@ -31,7 +31,7 @@ describe('hazards along your line', () => {
 
   it('water across the line is "across" with no sideways gap', () => {
     const f = [makeFeature('water', blob(at(90, 0), 10), 3)]
-    const [h] = analyseHazards(f, 3, me, green)
+    const [h] = analyseHazards(f, me, green)
     expect(h.side).toBe('across')
     expect(h.offsetM).toBe(0)
     // A five-sided "pond" of radius 10 centred 90 m out: its corners sit 9.95 m short and 8.66 m long of centre.
@@ -39,37 +39,38 @@ describe('hazards along your line', () => {
     expect(h.carryM).toBeCloseTo(98.66, 1)
   })
 
-  it('ignores hazards behind you, far off to the side, or on other holes', () => {
-    const f = [
-      makeFeature('bunker', blob(at(-40, 0), 5), 3),
-      makeFeature('bunker', blob(at(100, 80), 5), 3),
-      makeFeature('bunker', blob(at(100, 0), 5), 4),
-    ]
-    expect(analyseHazards(f, 3, me, green)).toEqual([])
+  it('ignores hazards behind you or far off to the side', () => {
+    const f = [makeFeature('bunker', blob(at(-40, 0), 5), 3), makeFeature('bunker', blob(at(100, 80), 5), 3)]
+    expect(analyseHazards(f, me, green)).toEqual([])
+  })
+
+  it('counts a hazard on your line even if it was drawn on another hole', () => {
+    const f = [makeFeature('bunker', blob(at(100, 0), 5), 4)]
+    expect(analyseHazards(f, me, green).length).toBe(1)
   })
 
   it('includes a bunker just behind the green, and lists hazards nearest first', () => {
     const f = [makeFeature('bunker', blob(at(175, 3), 4), 3), makeFeature('trouble', blob(at(60, 20), 5), 3)]
-    const r = analyseHazards(f, 3, me, green)
+    const r = analyseHazards(f, me, green)
     expect(r.map((h) => h.kind)).toEqual(['trouble', 'bunker'])
     expect(r[0].side).toBe('left')
   })
 
   it("you're in the bunker: reach is 0", () => {
     const f = [makeFeature('bunker', blob(at(5, 0), 8), 3)]
-    expect(analyseHazards(f, 3, me, green)[0].reachM).toBe(0)
+    expect(analyseHazards(f, me, green)[0].reachM).toBe(0)
   })
 
   it('a fence 18 m right of the line is reported as out of bounds right, 18 m clear', () => {
     const fence = makeFeature('out-of-bounds', [at(-20, -18), at(200, -18)], 3)
-    const [b] = analyseBoundaries([fence], 3, me, green)
+    const [b] = analyseBoundaries([fence], me, green)
     expect(b.side).toBe('right')
     expect(b.clearanceM).toBeCloseTo(18, 0)
   })
 
   it('a boundary that crosses your line is "across"', () => {
     const fence = makeFeature('out-of-bounds', [at(100, -30), at(100, 30)], 3)
-    const [b] = analyseBoundaries([fence], 3, me, green)
+    const [b] = analyseBoundaries([fence], me, green)
     expect(b.side).toBe('across')
     expect(b.clearanceM).toBe(0)
     expect(b.atM).toBeCloseTo(100, 0)

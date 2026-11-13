@@ -39,7 +39,8 @@ import { getTile, setTileKey, TileError } from './tileStore'
 export const TEE_COLOURS: Record<string, string> = { blue: '#4a90e2', white: '#ffffff', yellow: '#f2c230' }
 
 export interface MapAdapter {
-  setFeatures(features: CourseFeature[], currentHole: number, selectedId: string | null): void
+  /** `here` = ids of features that count for the hole being shown (others are dimmed). */
+  setFeatures(features: CourseFeature[], here: Set<string>, selectedId: string | null): void
   setDraft(points: LngLat[], shape: ShapeType | null): void
   setEditVertices(points: LngLat[], activeIndex: number | null): void
   setGolfer(point: LngLat | null, accuracyM: number | null): void
@@ -79,7 +80,7 @@ function style(key: string | null): StyleSpecification {
   }
 }
 
-function toGeoJson(features: CourseFeature[], hole: number, selectedId: string | null) {
+function toGeoJson(features: CourseFeature[], here: Set<string>, selectedId: string | null) {
   return {
     type: 'FeatureCollection' as const,
     features: features.map((f) => ({
@@ -90,7 +91,7 @@ function toGeoJson(features: CourseFeature[], hole: number, selectedId: string |
         fid: f.id,
         kind: f.kind,
         tee: f.teeId ? (TEE_COLOURS[f.teeId] ?? '#ffffff') : '#ffffff',
-        here: f.holes.includes(hole) ? 1 : 0,
+        here: here.has(f.id) ? 1 : 0,
         selected: f.id === selectedId ? 1 : 0,
       },
     })),
@@ -250,8 +251,8 @@ export function createMap(container: HTMLElement, opts: { key: string | null; ce
     whenLoaded(() => (map.getSource(id) as GeoJSONSource | undefined)?.setData(data as never))
 
   return {
-    setFeatures(features, hole, selectedId) {
-      set('course', toGeoJson(features, hole, selectedId))
+    setFeatures(features, here, selectedId) {
+      set('course', toGeoJson(features, here, selectedId))
     },
     setDraft(points, shape) {
       if (!shape || points.length === 0) return set('draft', empty)

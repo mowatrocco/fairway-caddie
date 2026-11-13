@@ -17,6 +17,7 @@ import {
   withVertices,
 } from '../lib/course/features'
 import { checkHole, greenMiddle, type HoleReport } from '../lib/course/holeChecks'
+import { appliesToHole, hazardHoles, isHazard, type HoleReach } from '../lib/course/autoHoles'
 import { createMap, holePoints, TEE_COLOURS, type MapAdapter } from '../lib/mapping/mapAdapter'
 import { getDeviceSetting, setDeviceSetting } from '../lib/storage/db'
 import { useGpsCapture, CAPTURE_MIN_FIXES, CAPTURE_SECONDS } from '../lib/gps/useGpsCapture'
@@ -87,6 +88,13 @@ export default function CourseMapPage({ data, dispatch, onClose }: Props) {
   const card = usualTee.holes.find((h) => h.hole === hole)!
   const report = useMemo(() => checkHole(features, hole, COURSE), [features, hole])
   const selected = features.find((f) => f.id === selectedId) ?? null
+  // Which holes each hazard counts for, worked out from where it sits.
+  const autoHoles = useMemo(() => hazardHoles(features, [COURSE.mapStart.lng, COURSE.mapStart.lat]), [features])
+  const hereIds = useMemo(
+    () => new Set(features.filter((f) => appliesToHole(f, hole, autoHoles)).map((f) => f.id)),
+    [features, hole, autoHoles],
+  )
+  const strayHazards = features.filter((f) => isHazard(f) && (autoHoles.get(f.id)?.length ?? 0) === 0)
 
   // ---------- Map set-up ----------
 
@@ -131,8 +139,8 @@ export default function CourseMapPage({ data, dispatch, onClose }: Props) {
 
   // Keep the map's drawings in step with the app's state.
   useEffect(() => {
-    adapterRef.current?.setFeatures(features, hole, selectedId)
-  }, [features, hole, selectedId, mapKey])
+    adapterRef.current?.setFeatures(features, hereIds, selectedId)
+  }, [features, hereIds, selectedId, mapKey])
 
   useEffect(() => {
     const a = adapterRef.current
@@ -414,6 +422,7 @@ export default function CourseMapPage({ data, dispatch, onClose }: Props) {
         {mode.type === 'browse' && selected && (
           <FeaturePanel
             f={selected}
+            reach={autoHoles.get(selected.id)}
             teeName={teeName}
             d={d}
             onClose={() => setSelectedId(null)}
@@ -578,6 +587,16 @@ export default function CourseMapPage({ data, dispatch, onClose }: Props) {
               </button>
             ))}
           </div>
+          {strayHazards.length > 0 && (
+            <p className="msg msg-warn">
+              {strayHazards.length} hazard{strayHazards.length === 1 ? " isn't" : "s aren't"} near any hole's line of play,
+              so {strayHazards.length === 1 ? 'it' : 'they'} won't show on any hole. Check{' '}
+              {strayHazards.length === 1 ? "it's" : "they're"} in the right place.
+            </p>
+          )}
+          <p className="field-hint">
+            Hazards and out of bounds count for every hole they sit near, whichever hole you drew them on.
+          </p>
           <h3 className="group-title">Hole {hole} checklist</h3>
           <ul className="checklist">
             {report.checks.map((c, i) => (
@@ -622,12 +641,18 @@ export default function CourseMapPage({ data, dispatch, onClose }: Props) {
   )
 }
 
+function listHoles(holes: number[]): string {
+  const s = [...holes].sort((a, b) => a - b)
+  return s.length <= 1 ? s.join('') : `${s.slice(0, -1).join(', ')} and ${s[s.length - 1]}`
+}
+
 function drawLength(points: LngLat[], closed: boolean): number {
   return pathLengthM(closed && points.length > 2 ? [...points, points[0]] : points)
 }
 
 function FeaturePanel({
   f,
+  reach,
   teeName,
   d,
   onClose,
@@ -637,6 +662,7 @@ function FeaturePanel({
   onDelete,
 }: {
   f: CourseFeature
+  reach: HoleReach[] | undefined
   teeName: (id?: string) => string
   d: (m: number) => string
   onClose: () => void
@@ -674,6 +700,13 @@ function FeaturePanel({
         )}{' '}
         {f.source}.
       </p>
+      {isHazard(f) && (
+        <p className="panel-hint" data-testid="counts-for">
+          {reach && reach.length > 0
+            ? `Counts for ${reach.length === 1 ? 'hole' : 'holes'} ${listHoles(reach.map((r) => r.hole))}, worked out from where it sits.`
+            : "Not near any hole's line of play. Check it's in the right place."}
+        </p>
+      )}
       <div className="btn-row">
         {isPoint ? (
           <button className="btn" onClick={onMoveHere}>
