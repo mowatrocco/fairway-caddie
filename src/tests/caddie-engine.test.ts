@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { adjustModel } from '../lib/caddie/lie'
 import { recommend, type CaddieAdvice, type CaddieInput } from '../lib/caddie/engine'
 import { destination, distanceM, type LngLat } from '../lib/geo/geodesic'
 import { makeFeature } from '../lib/course/features'
@@ -213,6 +214,41 @@ describe('dog-legs', () => {
     expect(r.primary.pTrouble).toBeLessThan(0.1)
     expect(r.primary.layup).toBe(true)
     expect(distanceM(r.primary.aim, corner)).toBeLessThan(60)
+  })
+})
+
+describe('lies and swing', () => {
+  it('a fairway bunker takes more club for the same distance, and says why', () => {
+    const flat = advise(input(147))
+    const sand = advise(input(147, [], { lie: { surface: 'bunker', slopes: [] } }))
+    expect(BAG.find((c) => c.name === sand.primary.clubName)!.carryM!).toBeGreaterThan(BAG.find((c) => c.name === flat.primary.clubName)!.carryM!)
+    expect(sand.reasons.join(' ')).toMatch(/Fairway bunker/)
+  })
+  it('ball above your feet aims right to allow for the pull left; below your feet aims left', () => {
+    const above = advise(input(147, [], { lie: { surface: 'fairway', slopes: ['above-feet'] } }))
+    const below = advise(input(147, [], { lie: { surface: 'fairway', slopes: ['below-feet'] } }))
+    expect(above.primary.aimText).toMatch(/right of the middle/)
+    expect(below.primary.aimText).toMatch(/left of the middle/)
+  })
+  it('light rough and hard ground run further and are less reliable on distance', () => {
+    const base = modelClub(BAG.find((c) => c.name === '7 Iron')!)!
+    for (const surface of ['light-rough', 'hard'] as const) {
+      const m = adjustModel(base, { surface, slopes: [] })
+      expect(m.rollShare).toBeGreaterThan(base.rollShare)
+      expect(m.depthSdM).toBeGreaterThan(base.depthSdM)
+      expect(m.carryM).toBe(base.carryM)
+      expect(m.rollKnown).toBe(false)
+    }
+  })
+  it('a hard swing adds only a few metres and sprays it more', () => {
+    const base = modelClub(BAG.find((c) => c.name === '8 Iron')!)!
+    const hard = adjustModel(base, { surface: 'fairway', slopes: [] }, 'hard')
+    expect(hard.carryM - base.carryM).toBeGreaterThan(2)
+    expect(hard.carryM - base.carryM).toBeLessThan(6)
+    expect(hard.leftSdM).toBeGreaterThan(base.leftSdM * 1.3)
+  })
+  it('a plain lie changes nothing', () => {
+    expect(advise(input(147, [], { lie: { surface: 'fairway', slopes: [] } }))).toEqual(advise(input(147)))
   })
 })
 

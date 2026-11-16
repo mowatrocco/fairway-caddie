@@ -1768,3 +1768,53 @@ html.mapper-open body {
 .rf-block {
   margin-top: 16px;
 }
+
+/* ---------- Lie buttons ---------- */
+
+.lie-wrap {
+  margin-top: 18px;
+}
+
+.lie-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.lie-head .section-title {
+  margin: 0;
+}
+
+.lie-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.lie-row .chip {
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 15px;
+}
+
+.lie-row + .lie-row {
+  margin-top: 6px;
+}
+
+.link-btn {
+  min-height: 40px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--flag);
+  font: inherit;
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.lie-tee {
+  margin-top: 14px;
+}

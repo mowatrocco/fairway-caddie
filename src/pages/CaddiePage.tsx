@@ -10,7 +10,8 @@ import { findGreen, findGreenMiddle, findLineOfPlay, lineOf, pointOf, ringOf, TR
 import { isHazard } from '../lib/course/autoHoles'
 import { recommend, type CaddieResult } from '../lib/caddie/engine'
 import type { Strategy } from '../lib/caddie/scoring'
-import { AdviceCard, StrategyPicker, StrategyTable } from '../components/caddie/AdviceCard'
+import { AdviceCard, LiePicker, StrategyPicker, StrategyTable } from '../components/caddie/AdviceCard'
+import { isPlain, PLAIN_LIE, type Lie } from '../lib/caddie/lie'
 import { analyseBoundaries, analyseHazards } from '../lib/course/hazards'
 import { southHead } from '../data/courses/southHead'
 import { useLiveGps } from '../lib/gps/useLiveGps'
@@ -66,6 +67,8 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
   // A reading belongs to the spot you took it from; walk on and it no longer applies.
   const [rangefinder, setRangefinder] = useState<Record<number, { m: number; at: LngLat | null } | null>>({})
   const [strategy, setStrategyState] = useState<Strategy>('normal')
+  // The lie belongs to one shot: it resets when you change hole or walk on.
+  const [lieAt, setLieAt] = useState<{ lie: Lie; hole: number; at: LngLat | null } | null>(null)
 
   useEffect(() => {
     getDeviceSetting('gpsOn').then((v) => setGpsOn(v === 'yes'), () => setGpsOn(false))
@@ -131,6 +134,10 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
 
   const report = checkHole(features, hole, COURSE)
 
+  const lie =
+    lieAt && lieAt.hole === hole && !(lieAt.at && position && distanceM(lieAt.at, position) > RF_MOVE_M) ? lieAt.lie : PLAIN_LIE
+  const setLie = (l: Lie) => setLieAt({ lie: l, hole, at: position })
+
   // Driver is only offered from the tee. Use the mapped tees; if none are mapped yet,
   // being about the card's length from the green counts.
   const teeSpots = features.filter((f) => f.kind === 'tee' && f.holes.includes(hole)).map(pointOf).filter((p): p is LngLat => p !== null)
@@ -155,11 +162,30 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
           stale: !manualPos && status.kind === 'fix' && status.stale,
           rf,
           fromTee,
+          lie: fromTee ? PLAIN_LIE : lie,
           clubs: data.bag,
           strategy,
         }
       : null
 
+  const lieBlock =
+    adviceInput && position && !farAway && !onGreen ? (
+      fromTee ? (
+        <p className="field-hint lie-tee">Teeing off: lie buttons appear for your next shot.</p>
+      ) : (
+        <div className="lie-wrap">
+          <div className="lie-head">
+            <h2 className="section-title">Your lie</h2>
+            {!isPlain(lie) && (
+              <button className="link-btn" onClick={() => setLie(PLAIN_LIE)}>
+                Reset
+              </button>
+            )}
+          </div>
+          <LiePicker lie={lie} onChange={setLie} />
+        </div>
+      )
+    ) : null
   const rangefinderBlock = ring && (
     <div className="rf-block">
       <NumberField
@@ -288,6 +314,7 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
               GPS is fair: distances could be out by up to {formatDistance(fairPm, units)} {u}.
             </p>
           )}
+          {lieBlock}
           {!onGreen && rangefinderBlock}
           {adviceInput && (position || rf !== null) && (
             <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} />
@@ -339,6 +366,7 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
             <p className="field-hint">Tap the map to measure to any spot.</p>
           )}
           {dists && !farAway && !onGreen && <GreenNumbers d={dists} units={units} roughM={roughM} compact />}
+          {lieBlock}
           {!onGreen && !farAway && rangefinderBlock}
           {adviceInput && position && !farAway && (
             <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} onPlan={setPlan} table />
@@ -473,6 +501,7 @@ interface AdviceInput {
   stale: boolean
   rf: number | null
   fromTee: boolean
+  lie: Lie
   clubs: Club[]
   strategy: Strategy
 }
@@ -493,7 +522,8 @@ function Advice({
   onPlan?: (p: { aim: LngLat; zone: LngLat[] } | null) => void
   table?: boolean
 }) {
-  const { features, hole, green, middle, greenTrust, position, source, accuracyM, stale, rf, fromTee, clubs, strategy } = input
+  const { features, hole, green, middle, greenTrust, position, source, accuracyM, stale, rf, fromTee, lie, clubs, strategy } = input
+  const lieKey = `${lie.surface}|${[...lie.slopes].sort().join(',')}`
   // GPS readings jiggle by a metre or so every second; round to about 2 m so the advice only reworks on real moves.
   const lng = position ? Math.round(position[0] * 5e4) / 5e4 : null
   const lat = position ? Math.round(position[1] * 5e4) / 5e4 : null
@@ -509,6 +539,7 @@ function Advice({
         greenMiddle: middle,
         flagDistanceM: rf,
         fromTee,
+        lie,
         corners: lineOf(findLineOfPlay(features, hole))?.slice(1, -1) ?? [],
         hazards: features.filter(isHazard),
         greenTrust,
@@ -517,7 +548,7 @@ function Advice({
       }),
     // green and middle come from features and hole
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [features, hole, lng, lat, source, acc, stale, rf, fromTee, clubs, strategy, greenTrust],
+    [features, hole, lng, lat, source, acc, stale, rf, fromTee, lieKey, clubs, strategy, greenTrust],
   )
   useEffect(() => {
     if (!onPlan) return

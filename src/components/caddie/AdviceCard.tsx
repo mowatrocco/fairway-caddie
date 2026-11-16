@@ -3,6 +3,7 @@ import type { CaddieResult } from '../../lib/caddie/engine'
 import { pct } from '../../lib/caddie/engine'
 import { STRATEGY_LABEL, type Strategy } from '../../lib/caddie/scoring'
 import { formatDistance, unitLabel } from '../../lib/calculations/units'
+import { OPPOSITE, SLOPE_LABEL, SURFACE_LABEL, type Lie, type Slope, type Surface } from '../../lib/caddie/lie'
 
 const CONF_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
 
@@ -143,5 +144,38 @@ export function StrategyTable({ result, units }: { result: CaddieResult; units: 
         })}
       </tbody>
     </table>
+  )
+}
+
+/** How the ball's sitting: one surface, plus any slopes. */
+export function LiePicker({ lie, onChange }: { lie: Lie; onChange: (l: Lie) => void }) {
+  const toggleSlope = (s: Slope) => {
+    const on = lie.slopes.includes(s)
+    const slopes = on ? lie.slopes.filter((x) => x !== s) : [...lie.slopes.filter((x) => x !== OPPOSITE[s]), s]
+    onChange({ ...lie, slopes })
+  }
+  return (
+    <div className="lie" data-testid="lie">
+      <div className="lie-row" role="radiogroup" aria-label="Ball is in">
+        {(Object.keys(SURFACE_LABEL) as Surface[]).map((s) => (
+          <button
+            key={s}
+            role="radio"
+            aria-checked={lie.surface === s}
+            className={lie.surface === s ? 'chip chip-on' : 'chip'}
+            onClick={() => onChange({ ...lie, surface: s })}
+          >
+            {SURFACE_LABEL[s]}
+          </button>
+        ))}
+      </div>
+      <div className="lie-row" role="group" aria-label="Slope">
+        {(Object.keys(SLOPE_LABEL) as Slope[]).map((s) => (
+          <button key={s} aria-pressed={lie.slopes.includes(s)} className={lie.slopes.includes(s) ? 'chip chip-on' : 'chip'} onClick={() => toggleSlope(s)}>
+            {SLOPE_LABEL[s]}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }

@@ -1,3 +1,4 @@
+import { adjustModel, lieNotes, PLAIN_LIE, type Lie, type Swing } from './lie'
 import type { Club } from '../../types'
 import type { CourseFeature, FeatureKind } from '../../types/courseMap'
 import type { TrustLevel } from '../../types/course'
@@ -46,6 +47,10 @@ export interface CaddieInput {
   greenTrust: TrustLevel
   clubs: Club[]
   strategy: Strategy
+  /** How the ball's sitting. Fairway and flat if not given. */
+  lie?: Lie
+  /** Swing for every club (a what-if). Normal if not given. */
+  swing?: Swing
 }
 
 export interface ShotPlan {
@@ -147,7 +152,12 @@ const dirOf = (a: number): XY => [Math.sin(a), Math.cos(a)]
 const angleOf = (p: XY) => Math.atan2(p[0], p[1])
 
 export function recommend(input: CaddieInput): CaddieResult {
-  const usable = input.clubs.map(modelClub).filter((m): m is ClubModel => m !== null)
+  const lie = input.lie ?? PLAIN_LIE
+  const swing = input.swing ?? 'normal'
+  const usable = input.clubs
+    .map(modelClub)
+    .filter((m): m is ClubModel => m !== null)
+    .map((m) => adjustModel(m, lie, swing))
   if (usable.length === 0) {
     return { kind: 'none', reason: 'No clubs have a distance yet. Add them in My Bag and the caddie can advise.' }
   }
@@ -245,9 +255,10 @@ export function recommend(input: CaddieInput): CaddieResult {
       if (safeOnes.length > 0) pool = safeOnes
     }
     if (pool.length === 0) return null
-    // Near-ties (within 0.01 strokes of the best) go to the straighter aim: aiming off the middle has to earn its place.
+    // Near-ties (within 0.01 strokes of the best) go to the plainest aim: straight at the target,
+    // allowing only for the club's known lean (usual miss, or the lie). Anything more has to earn its place.
     const lowest = Math.min(...pool.map((c) => cost(c, s)))
-    const swing = (c: Candidate) => Math.abs(c.aim.angle - pinAngle)
+    const swing = (c: Candidate) => Math.abs(c.aim.angle - (pinAngle + Math.atan2(c.m.sideBiasM, expectedTotal(c.m))))
     return pool
       .filter((c) => cost(c, s) <= lowest + NEAR_TIE)
       .reduce((a, c) => (swing(c) < swing(a) - 1e-9 || (Math.abs(swing(c) - swing(a)) <= 1e-9 && cost(c, s) < cost(a, s)) ? c : a))
@@ -297,7 +308,7 @@ export function recommend(input: CaddieInput): CaddieResult {
     .sort((a, b) => Math.abs(expectedTotal(a.m) - targetM) - Math.abs(expectedTotal(b.m) - targetM))[0]
   const bestStraight = candidates.find((c) => c.m === best.m && c.aim.angle === aims[straight].angle)!
 
-  const reasons = explain(best, naive, bestStraight, targetM, pinWord, alt)
+  const reasons = [...explain(best, naive, bestStraight, targetM, pinWord, alt), ...lieNotes(lie, swing)]
   const confidence = rateConfidence(input, best.m)
   const notes: string[] = []
   if (driverLeftOut) notes.push("Driver is left out because you're not on the tee.")
