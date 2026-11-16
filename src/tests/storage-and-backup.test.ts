@@ -18,6 +18,16 @@ describe('backup and restore', () => {
     }
   })
 
+  it('keeps the wedge chart through a backup, and older backups without one still load', () => {
+    const data = starterData()
+    const w = data.bag.findIndex((c) => c.category === 'wedge')
+    data.bag[w] = { ...data.bag[w], partials: { hip: 40, nine: 60, tenThirty: null } }
+    const r = readBackup(backupToJson(createBackup(data)))
+    expect(r.ok && r.data.bag[w].partials).toEqual({ hip: 40, nine: 60, tenThirty: null })
+    const old = readBackup(backupToJson(createBackup(starterData())))
+    expect(old.ok && old.data.bag.every((c) => c.partials === undefined)).toBe(true)
+  })
+
   it('rejects text that is not JSON', () => {
     const r = readBackup('not json')
     expect(r.ok).toBe(false)

@@ -128,3 +128,16 @@ describe('gap flags', () => {
     expect(r.totalOnlyIds).toEqual(['a'])
   })
 })
+
+describe('wedge chart checks', () => {
+  const base = { ...starterBag().find((c) => c.category === 'wedge')!, carryM: 90 }
+  it('accepts a sensible chart', () => {
+    const c = checkClub({ ...base, partials: { hip: 40, nine: 60, tenThirty: 75 } })
+    expect(c.errors).toEqual([])
+    expect(c.warnings.join(' ')).not.toMatch(/Part swing/)
+  })
+  it('flags swings out of order or longer than the full shot', () => {
+    expect(checkClub({ ...base, partials: { hip: 60, nine: 50, tenThirty: null } }).warnings.join(' ')).toMatch(/further the longer the swing/)
+    expect(checkClub({ ...base, partials: { hip: null, nine: null, tenThirty: 95 } }).warnings.join(' ')).toMatch(/as long as the full shot/)
+  })
+})

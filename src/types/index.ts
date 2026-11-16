@@ -41,6 +41,18 @@ export interface Club {
   confidence: DistanceConfidence
   source: DistanceSource
   notes: string
+  /** Wedge chart: carry for shorter swings, metres. Missing on older saved data. */
+  partials?: PartialSwings
+}
+
+/** Carry for each part swing, by how far back the lead arm goes. */
+export interface PartialSwings {
+  /** Hip high, about 7:30. */
+  hip: number | null
+  /** Lead arm level with the ground. */
+  nine: number | null
+  /** About three-quarters. */
+  tenThirty: number | null
 }
 
 export interface Profile {

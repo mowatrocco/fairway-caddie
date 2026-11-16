@@ -4,7 +4,7 @@ import type { CourseFeature, FeatureKind } from '../../types/courseMap'
 import type { TrustLevel } from '../../types/course'
 import type { LngLat } from '../geo/geodesic'
 import { localPlane, pointInRing, segmentsCross, centroid, type XY } from '../geo/plane'
-import { expectedTotal, modelClub, type ClubModel } from './clubModel'
+import { expectedTotal, modelClub, partialModels, type ClubModel } from './clubModel'
 import {
   BUNKER_EXTRA,
   SAFE_MAX_PENALTY,
@@ -161,7 +161,7 @@ export function recommend(input: CaddieInput): CaddieResult {
   const lie = input.lie ?? PLAIN_LIE
   const swing = input.swing ?? 'normal'
   const usable = input.clubs
-    .map(modelClub)
+    .flatMap((c) => [modelClub(c), ...partialModels(c)])
     .filter((m): m is ClubModel => m !== null)
     .map((m) => adjustModel(m, lie, swing))
   if (usable.length === 0) {
@@ -214,7 +214,9 @@ export function recommend(input: CaddieInput): CaddieResult {
       targetM,
       shortestClub: shortest.club.name,
       shortestCarryM: shortest.carryM,
-      reason: `That's inside your shortest full shot (${shortest.club.name}, about ${Math.round(shortest.carryM)} m carry). It needs a part swing, which the caddie doesn't model yet.`,
+      reason: input.clubs.some((c) => c.partials && Object.values(c.partials).some((v) => v !== null))
+        ? `That's inside your shortest shot in the wedge chart (${shortest.club.name}, about ${Math.round(shortest.carryM)} m carry). Chip or pitch it, or add a shorter swing to your wedge chart in My Bag.`
+        : `That's inside your shortest full shot (${shortest.club.name}, about ${Math.round(shortest.carryM)} m carry). It needs a part swing: add your part-swing carries to the wedge chart in My Bag and the caddie can pick one.`,
     }
   }
 

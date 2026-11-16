@@ -148,6 +148,36 @@ export function ClubEditor({ club, units, isNew, onSave, onDelete, onClose }: Pr
           />
           <Choice label="Where the numbers came from" value={draft.source} options={sources} onChange={(source) => set({ source })} />
 
+          {draft.category === 'wedge' && (
+            <>
+              <h3 className="group-title">Wedge chart</h3>
+              <p className="field-hint">
+                Carry for shorter swings. Same rhythm, only the backswing changes. Leave any you haven't measured blank.
+              </p>
+              <div className="trio">
+                {(
+                  [
+                    ['hip', 'Hip high', '7:30'],
+                    ['nine', "9 o'clock", 'Arm level'],
+                    ['tenThirty', '10:30', 'Three-quarter'],
+                  ] as const
+                ).map(([k, label, hint]) => (
+                  <NumberField
+                    key={k}
+                    label={label}
+                    name={`partial-${k}`}
+                    unit={u}
+                    value={shown(draft.partials?.[k] ?? null)}
+                    onChange={(v) =>
+                      set({ partials: { hip: null, nine: null, tenThirty: null, ...draft.partials, [k]: stored(v) } })
+                    }
+                    hint={hint}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
           <h3 className="group-title">Shot pattern</h3>
           <Choice label="Usual shape" value={draft.shape} options={shapes} onChange={(shape) => set({ shape })} />
           <Choice

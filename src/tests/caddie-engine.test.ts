@@ -334,3 +334,30 @@ describe('missing or weak data', () => {
     expect(r.notes.join(' ')).toMatch(/Wind and slope aren't included here/)
   })
 })
+
+describe('wedge chart', () => {
+  const withChart = BAG.map((c) => (c.name === '54' ? { ...c, partials: { hip: 40, nine: 60, tenThirty: 75 } } : c))
+
+  it('picks a part swing for an in-between distance', () => {
+    const r = advise(input(62, [], { clubs: withChart }))
+    expect(r.primary.clubName).toBe("54 (9 o'clock swing)")
+    expect(r.primary.carryM).toBe(60)
+  })
+
+  it('without a chart, short shots say to add one', () => {
+    const r = recommend(input(55))
+    expect(r.kind).toBe('part-swing')
+    if (r.kind === 'part-swing') expect(r.reason).toMatch(/wedge chart in My Bag/)
+  })
+
+  it('inside the shortest chart swing, it says to chip or pitch', () => {
+    const r = recommend(input(25, [], { clubs: withChart }))
+    expect(r.kind).toBe('part-swing')
+    if (r.kind === 'part-swing') expect(r.reason).toMatch(/shortest shot in the wedge chart \(54 \(hip-high swing\)/)
+  })
+
+  it('never offers two swings of the same club as the alternative', () => {
+    const r = advise(input(62, [], { clubs: withChart }))
+    expect(r.alternative === null || !r.alternative.clubName.startsWith('54')).toBe(true)
+  })
+})

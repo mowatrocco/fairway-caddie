@@ -1818,3 +1818,9 @@ html.mapper-open body {
 .lie-tee {
   margin-top: 14px;
 }
+
+.trio {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}

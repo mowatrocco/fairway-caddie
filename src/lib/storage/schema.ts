@@ -22,6 +22,7 @@ export const clubSchema = z.object({
   confidence: z.enum(['unknown', 'guess', 'rough', 'measured']),
   source: z.enum(['estimate', 'rangefinder', 'launch-monitor', 'logged-shots']),
   notes: z.string().max(1000),
+  partials: z.object({ hip: distance, nine: distance, tenThirty: distance }).optional(),
 })
 
 export const profileSchema = z.object({

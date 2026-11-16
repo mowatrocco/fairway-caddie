@@ -96,3 +96,34 @@ export function modelClub(club: Club): ClubModel | null {
 export function expectedTotal(m: ClubModel): number {
   return m.carryM * (1 + m.rollShare)
 }
+
+export const PART_LABEL = { hip: 'hip-high swing', nine: "9 o'clock swing", tenThirty: '10:30 swing' } as const
+
+/** Part swings are a little less reliable on distance than a full one. */
+export const PART_DEPTH_FACTOR = 1.2
+
+/**
+ * One model per part swing in the wedge chart, named like "54° (9 o'clock swing)".
+ * They share the club's id so the caddie never offers the same club twice.
+ */
+export function partialModels(club: Club): ClubModel[] {
+  const p = club.partials
+  if (!p || club.category === 'putter') return []
+  const out: ClubModel[] = []
+  for (const k of ['hip', 'nine', 'tenThirty'] as const) {
+    const carry = p[k]
+    if (carry === null || carry <= 0) continue
+    const named: Club = {
+      ...club,
+      name: `${club.name} (${PART_LABEL[k]})`,
+      carryM: carry,
+      totalM: null,
+      roughM: null,
+      spreadLeftM: null,
+      spreadRightM: null,
+    }
+    const m = modelClub(named)
+    if (m) out.push({ ...m, depthSdM: m.depthSdM * PART_DEPTH_FACTOR })
+  }
+  return out
+}

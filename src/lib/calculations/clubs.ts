@@ -58,6 +58,15 @@ export function checkClub(club: Club): ClubCheck {
   if (badSpread(club.spreadLeftM)) errors.push(`Left spread must be between 0 and ${MAX_SPREAD_M} m.`)
   if (badSpread(club.spreadRightM)) errors.push(`Right spread must be between 0 and ${MAX_SPREAD_M} m.`)
 
+  const p = club.partials
+  if (p && [p.hip, p.nine, p.tenThirty].some(badDistance)) errors.push(`Part-swing carries must be between 1 and ${MAX_DISTANCE_M} m.`)
+  if (p) {
+    const list = [p.hip, p.nine, p.tenThirty].filter((v): v is number => v !== null)
+    const full = club.carryM ?? club.roughM
+    if (list.some((v, i) => i > 0 && v <= list[i - 1])) warnings.push('Part swings usually go further the longer the swing. Worth a check.')
+    if (full !== null && list.some((v) => v >= full)) warnings.push('A part swing is as long as the full shot. Worth a check.')
+  }
+
   if (club.carryM !== null && club.totalM !== null && club.totalM < club.carryM) {
     warnings.push('Total is shorter than carry. That only happens if the ball spins back.')
   }

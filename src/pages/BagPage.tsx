@@ -83,6 +83,7 @@ export function BagPage({ bag, units, dispatch }: Props) {
                     <span className="club-name">{club.name}</span>
                     <span className="club-meta">
                       {club.category === 'putter' ? 'Putter' : confidenceLabel[club.confidence]}
+                      {partialText(club, units) && <>, part swings {partialText(club, units)}</>}
                     </span>
                   </button>
                 )}
@@ -203,4 +204,12 @@ function GapMarker({ gap, units, fromName }: { gap: Gap; units: Units; fromName:
       <span className="gap-text">{text}</span>
     </div>
   )
+}
+
+/** "35 / 55 / 70" for the wedge chart, or null if none set. */
+function partialText(club: Club, units: Units): string | null {
+  const p = club.partials
+  if (!p) return null
+  const list = [p.hip, p.nine, p.tenThirty].map((v) => (v === null ? '–' : formatDistance(v, units)))
+  return list.every((v) => v === '–') ? null : list.join(' / ')
 }
