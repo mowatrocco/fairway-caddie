@@ -4,6 +4,7 @@
 // Usage: npm run build && npm run test:e2e:caddie
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
+import { crc32, deflateSync } from 'node:zlib'
 import { join, resolve } from 'node:path'
 import puppeteer from 'puppeteer-core'
 import geodesic from 'geographiclib-geodesic'
@@ -28,6 +29,41 @@ const dest = ([lng, lat], bearing, m) => {
   return [r.lon2, r.lat2]
 }
 const dist = (a, b) => W.Inverse(a[1], a[0], b[1], b[0]).s12
+
+// ---------- Made-up ground heights, served as Terrain-RGB pictures ----------
+function pngRgba(w, h, rgba) {
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4)
+    len.writeUInt32BE(data.length)
+    const td = Buffer.concat([Buffer.from(type), data])
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(td) >>> 0)
+    return Buffer.concat([len, td, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(w, 0)
+  ihdr.writeUInt32BE(h, 4)
+  ihdr.set([8, 6, 0, 0, 0], 8)
+  const raw = Buffer.alloc((w * 4 + 1) * h)
+  for (let y = 0; y < h; y++) {
+    raw[y * (w * 4 + 1)] = 0
+    rgba.copy(raw, y * (w * 4 + 1) + 1, y * w * 4, (y + 1) * w * 4)
+  }
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])
+}
+function terrainTile(z, x, y, heightAt) {
+  const n = 2 ** z * 256
+  const rgba = Buffer.alloc(256 * 256 * 4)
+  for (let py = 0; py < 256; py++) {
+    const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y * 256 + py + 0.5)) / n))) * 180) / Math.PI
+    for (let px = 0; px < 256; px++) {
+      const lng = ((x * 256 + px + 0.5) / n) * 360 - 180
+      const v = Math.round((heightAt(lng, lat) + 10000) / 0.1)
+      rgba.set([(v >> 16) & 255, (v >> 8) & 255, v & 255, 255], (py * 256 + px) * 4)
+    }
+  }
+  return pngRgba(256, 256, rgba)
+}
 
 // ---------- Made-up hole 1, played on a bearing of 20° ----------
 const CLUB = [174.317846, -36.560186]
@@ -73,7 +109,7 @@ const browser = await puppeteer.launch({
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms))
 
 /** A page with the made-up course loaded into its storage. */
-async function preparedPage(context, { linzKey = null, noDistances = false } = {}) {
+async function preparedPage(context, { linzKey = null, noDistances = false, ground = null } = {}) {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (e) => errors.push(String(e)))
@@ -84,6 +120,11 @@ async function preparedPage(context, { linzKey = null, noDistances = false } = {
   page.on('request', (req) => {
     if (req.url().includes('basemaps.linz.govt.nz')) {
       linzHits.count++
+      const m = /\/elevation\/3857\/(\d+)\/(\d+)\/(\d+)\.png/.exec(req.url())
+      if (m && ground) {
+        const body = terrainTile(Number(m[1]), Number(m[2]), Number(m[3]), ground)
+        return req.respond({ status: 200, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body })
+      }
       return req.respond({ status: 200, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body: PNG })
     }
     req.continue()
@@ -369,6 +410,44 @@ try {
   await nd.close()
   await blocked.close()
 
+  // 12c. Slope from ground heights: rises 7% toward the green and 8% to the right
+  const sl = await browser.createBrowserContext()
+  await sl.overridePermissions(ORIGIN, ['geolocation'])
+  const KX = 111320 * Math.cos((P[1] * Math.PI) / 180)
+  const KY = 110574
+  const s20 = Math.sin((20 * Math.PI) / 180)
+  const c20 = Math.cos((20 * Math.PI) / 180)
+  const slopeGround = (lng, lat) => {
+    const dx = (lng - P[0]) * KX
+    const dy = (lat - P[1]) * KY
+    return 50 + 0.07 * (dx * s20 + dy * c20) + 0.08 * (dx * c20 - dy * s20)
+  }
+  const s = await preparedPage(sl, { linzKey: 'testkey1234567890abcd', ground: slopeGround })
+  const sh = helpers(s.page)
+  await s.page.setGeolocation({ latitude: P[1], longitude: P[0], accuracy: 4 })
+  await sh.clickText('button', 'Turn on GPS')
+  await s.page.waitForFunction(() => /plays \d+ m/.test(document.querySelector('[data-testid="advice"]')?.innerText ?? ''), { timeout: 15000 }).catch(() => {})
+  const sa = (await s.page.$eval('[data-testid="advice"]', (n) => n.innerText)).replace(/\n/g, ' ')
+  const playsLike = Number(/plays (\d+) m \((\d+) m up\)/.exec(sa)?.[1])
+  check(playsLike >= 157 && playsLike <= 162, `green ~10 m above you: the card says it plays ${playsLike} m`)
+  check(/middle is 1\d m above you, so it plays about 1\d\d m/.test(sa), 'and the reasons say how much higher the green is')
+  check(sa.includes('Slope is, from LINZ ground heights'), 'says slope is now included')
+  const slopeChips = await s.page.$$eval('[data-testid="lie"] .chip-on', (ns) => ns.map((n) => n.textContent))
+  check(
+    JSON.stringify(slopeChips) === '["Fairway","Ball above feet","Uphill"]' && Boolean(await s.page.$('[data-testid="lie-from-map"]')),
+    `the slope buttons are pre-set from the ground (${slopeChips.join(', ')}) with a note to check them`,
+  )
+  await s.page.screenshot({ path: join(SHOTS, '29-caddie-slope-iphone15.png'), fullPage: true })
+  await sh.clickText('[data-testid="lie"] button', 'Uphill')
+  await settle()
+  check(
+    JSON.stringify(await s.page.$$eval('[data-testid="lie"] .chip-on', (ns) => ns.map((n) => n.textContent))) === '["Fairway","Ball above feet"]' &&
+      !(await s.page.$('[data-testid="lie-from-map"]')),
+    'tapping a pre-set slope turns it off and it becomes your call',
+  )
+  check(s.errors.length === 0, `slope run: no console errors${s.errors.length ? ': ' + s.errors.join(' | ') : ''}`)
+  await sl.close()
+
   // 13. Offline photos: save the course, then go offline and still see the map
   const off = await browser.createBrowserContext()
   await off.overridePermissions(ORIGIN, ['geolocation'])
@@ -380,12 +459,14 @@ try {
   const plan = (await oh.text()).replace(/\n/g, ' ')
   const tiles = Number(/(\d+) photo tiles/.exec(plan)?.[1])
   check(tiles > 20 && tiles < 400, `offline download covers ${tiles} photo tiles for the mapped area`)
-  await oh.clickText('button', 'Save course photos')
-  await o.page.waitForFunction(() => /Course photos saved|didn't download/.test(document.body.innerText), { timeout: 120000 })
+  const heightTiles = Number(/(\d+) ground-height tiles/.exec(plan)?.[1])
+  check(heightTiles > 0 && heightTiles < 60, `and ${heightTiles} ground-height tiles`)
+  await oh.clickText('button', 'Save course photos and heights')
+  await o.page.waitForFunction(() => /Course photos and ground heights saved|didn't download/.test(document.body.innerText), { timeout: 180000 })
   const after = (await oh.text()).replace(/\n/g, ' ')
-  check(after.includes('Course photos saved') && after.includes(`${tiles} tiles saved`), `all ${tiles} tiles saved on the phone`)
+  check(after.includes('Course photos and ground heights saved') && after.includes(`${tiles} photo and ${heightTiles} height tiles saved`), `all ${tiles} photo and ${heightTiles} height tiles saved on the phone`)
   const hitsBefore = o.linzHits.count
-  check(hitsBefore >= tiles && hitsBefore <= tiles + 5, `fetched each tile about once (${hitsBefore} requests for ${tiles} tiles)`)
+  check(hitsBefore >= tiles + heightTiles && hitsBefore <= tiles + heightTiles + 20, `fetched each tile about once (${hitsBefore} requests for ${tiles + heightTiles} tiles)`)
   await o.page.tap('.sheet button[aria-label="Close"]')
   await settle()
   await o.page.setOfflineMode(true)

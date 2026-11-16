@@ -1,4 +1,4 @@
-import { linzAerialTileUrl } from './linzKey'
+import { linzAerialTileUrl, linzElevationTileUrl } from './linzKey'
 import { tileCacheKey, type Tile } from './tiles'
 
 // Aerial photos are kept on the phone (Cache Storage) under key-free names, so:
@@ -7,6 +7,22 @@ import { tileCacheKey, type Tile } from './tiles'
 //  - a renewed LINZ key still finds the saved photos.
 
 export const TILE_CACHE = 'linz-aerial-v1'
+
+/** Where a kind of tile comes from and where it's kept on the phone. */
+export interface TileSource {
+  cache: string
+  cacheKey: (t: Tile) => string
+  url: (key: string) => string
+}
+
+export const AERIAL: TileSource = { cache: TILE_CACHE, cacheKey: tileCacheKey, url: linzAerialTileUrl }
+
+/** Ground heights (LINZ 1 m LiDAR model, as Terrain-RGB pictures). */
+export const ELEVATION: TileSource = {
+  cache: 'linz-elevation-v1',
+  cacheKey: (t) => `https://fairway-caddie.local/linz/elevation/${t.z}/${t.x}/${t.y}.png`,
+  url: linzElevationTileUrl,
+}
 
 /** Standard LINZ keys allow 1,000 tiles a minute; stay well under it. */
 export const DOWNLOAD_TILES_PER_MINUTE = 300
@@ -29,19 +45,19 @@ export class TileError extends Error {
 }
 
 /** One aerial tile: from the phone if saved, otherwise from LINZ (and then saved). */
-export async function getTile(t: Tile, signal?: AbortSignal): Promise<ArrayBuffer> {
-  const cacheKey = tileCacheKey(t)
+export async function getTile(t: Tile, signal?: AbortSignal, source: TileSource = AERIAL): Promise<ArrayBuffer> {
+  const cacheKey = source.cacheKey(t)
   if (hasCaches()) {
-    const hit = await (await caches.open(TILE_CACHE)).match(cacheKey)
+    const hit = await (await caches.open(source.cache)).match(cacheKey)
     if (hit) return hit.arrayBuffer()
   }
   if (!currentKey) throw new TileError('No map key', 401)
-  const url = linzAerialTileUrl(currentKey).replace('{z}', String(t.z)).replace('{x}', String(t.x)).replace('{y}', String(t.y))
+  const url = source.url(currentKey).replace('{z}', String(t.z)).replace('{x}', String(t.x)).replace('{y}', String(t.y))
   const res = await fetch(url, { signal, mode: 'cors' })
   if (!res.ok) throw new TileError(`Tile ${t.z}/${t.x}/${t.y}: ${res.status}`, res.status)
   if (hasCaches()) {
     try {
-      await (await caches.open(TILE_CACHE)).put(cacheKey, res.clone())
+      await (await caches.open(source.cache)).put(cacheKey, res.clone())
     } catch {
       // Storage full: still show the tile, just don't keep it.
     }
@@ -49,18 +65,18 @@ export async function getTile(t: Tile, signal?: AbortSignal): Promise<ArrayBuffe
   return res.arrayBuffer()
 }
 
-export async function isTileSaved(t: Tile): Promise<boolean> {
+export async function isTileSaved(t: Tile, source: TileSource = AERIAL): Promise<boolean> {
   if (!hasCaches()) return false
-  return Boolean(await (await caches.open(TILE_CACHE)).match(tileCacheKey(t)))
+  return Boolean(await (await caches.open(source.cache)).match(source.cacheKey(t)))
 }
 
-export async function countSavedTiles(): Promise<number> {
+export async function countSavedTiles(source: TileSource = AERIAL): Promise<number> {
   if (!hasCaches()) return 0
-  return (await (await caches.open(TILE_CACHE)).keys()).length
+  return (await (await caches.open(source.cache)).keys()).length
 }
 
-export async function deleteSavedTiles(): Promise<void> {
-  if (hasCaches()) await caches.delete(TILE_CACHE)
+export async function deleteSavedTiles(source: TileSource = AERIAL): Promise<void> {
+  if (hasCaches()) await caches.delete(source.cache)
 }
 
 export interface DownloadProgress {
@@ -78,6 +94,7 @@ export async function downloadTiles(
   onProgress: (p: DownloadProgress) => void,
   signal?: AbortSignal,
   perMinute = DOWNLOAD_TILES_PER_MINUTE,
+  source: TileSource = AERIAL,
 ): Promise<DownloadProgress> {
   const gapMs = 60_000 / perMinute
   const progress: DownloadProgress = { done: 0, total: tiles.length, failed: 0 }
@@ -87,7 +104,7 @@ export async function downloadTiles(
   const worker = async () => {
     while (next < tiles.length && !signal?.aborted) {
       const t = tiles[next++]
-      if (await isTileSaved(t)) {
+      if (await isTileSaved(t, source)) {
         progress.done++
         onProgress({ ...progress })
         continue
@@ -96,7 +113,7 @@ export async function downloadTiles(
       lastStart = Math.max(Date.now(), lastStart + gapMs)
       if (wait > 0) await new Promise((r) => setTimeout(r, wait))
       try {
-        await getTile(t, signal)
+        await getTile(t, signal, source)
       } catch {
         if (signal?.aborted) break
         progress.failed++

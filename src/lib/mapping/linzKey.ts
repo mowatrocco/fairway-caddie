@@ -24,3 +24,12 @@ export function parseLinzKey(input: string): KeyParse {
 export function linzAerialTileUrl(key: string): string {
   return `https://basemaps.linz.govt.nz/v1/tiles/aerial/3857/{z}/{x}/{y}.webp?api=${encodeURIComponent(key)}`
 }
+
+/**
+ * Ground heights from the LINZ national 1 m LiDAR elevation model, served by Basemaps
+ * as Terrain-RGB pictures: height = -10000 + (R*65536 + G*256 + B) * 0.1 metres.
+ * Where no LiDAR has been flown LINZ fills in from the coarser 8 m model.
+ */
+export function linzElevationTileUrl(key: string): string {
+  return `https://basemaps.linz.govt.nz/v1/tiles/elevation/3857/{z}/{x}/{y}.png?api=${encodeURIComponent(key)}&pipeline=terrain-rgb`
+}

@@ -12,6 +12,8 @@ import { recommend, type CaddieResult } from '../lib/caddie/engine'
 import type { Strategy } from '../lib/caddie/scoring'
 import { AdviceCard, LiePicker, StrategyPicker, StrategyTable } from '../components/caddie/AdviceCard'
 import { isPlain, PLAIN_LIE, type Lie } from '../lib/caddie/lie'
+import { useTerrain } from '../lib/terrain/useTerrain'
+import { suggestSlopes, type HeightAt } from '../lib/terrain/terrain'
 import { analyseBoundaries, analyseHazards } from '../lib/course/hazards'
 import { southHead } from '../data/courses/southHead'
 import { useLiveGps } from '../lib/gps/useLiveGps'
@@ -91,6 +93,12 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
   const onTapMap = useCallback((p: LngLat) => setMeasure(p), [])
   const [plan, setPlan] = useState<{ aim: LngLat; zone: LngLat[] } | null>(null)
 
+  // Ground heights around this shot (you and the green), for slope.
+  const herePos: LngLat | null = manualPos ?? gps.fix?.point ?? null
+  const hereMiddle = anyGreen ? greenMiddle(features, hole) : null
+  const nearGreen = herePos && hereMiddle && distanceM(herePos, hereMiddle) <= WRONG_HOLE_M
+  const terrain = useTerrain(nearGreen ? [herePos, hereMiddle] : null)
+
   if (!anyGreen) return <SetupView data={data} features={features} goToBag={goToBag} openMap={openMap} />
 
   const setHole = (h: number) => {
@@ -134,8 +142,10 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
 
   const report = checkHole(features, hole, COURSE)
 
-  const lie =
-    lieAt && lieAt.hole === hole && !(lieAt.at && position && distanceM(lieAt.at, position) > RF_MOVE_M) ? lieAt.lie : PLAIN_LIE
+  const lieSet = lieAt && lieAt.hole === hole && !(lieAt.at && position && distanceM(lieAt.at, position) > RF_MOVE_M)
+  // Until you touch the buttons for this shot, the slope ones come from the ground heights.
+  const mapSlopes = !lieSet && terrain.heightAt && position && middle && !farAway ? suggestSlopes(terrain.heightAt, position, middle) : []
+  const lie: Lie = lieSet ? lieAt.lie : { surface: 'fairway', slopes: mapSlopes }
   const setLie = (l: Lie) => setLieAt({ lie: l, hole, at: position })
 
   // Driver is only offered from the tee. Use the mapped tees; if none are mapped yet,
@@ -163,6 +173,8 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
           rf,
           fromTee,
           lie: fromTee ? PLAIN_LIE : lie,
+          heightAt: terrain.heightAt,
+          terrainVersion: terrain.version,
           clubs: data.bag,
           strategy,
         }
@@ -183,6 +195,11 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
             )}
           </div>
           <LiePicker lie={lie} onChange={setLie} />
+          {!lieSet && mapSlopes.length > 0 && (
+            <p className="field-hint" data-testid="lie-from-map">
+              Slope set from the ground heights. GPS is a few metres out, so check it and tap to change.
+            </p>
+          )}
         </div>
       )
     ) : null
@@ -502,6 +519,8 @@ interface AdviceInput {
   rf: number | null
   fromTee: boolean
   lie: Lie
+  heightAt: HeightAt | null
+  terrainVersion: number
   clubs: Club[]
   strategy: Strategy
 }
@@ -522,7 +541,7 @@ function Advice({
   onPlan?: (p: { aim: LngLat; zone: LngLat[] } | null) => void
   table?: boolean
 }) {
-  const { features, hole, green, middle, greenTrust, position, source, accuracyM, stale, rf, fromTee, lie, clubs, strategy } = input
+  const { features, hole, green, middle, greenTrust, position, source, accuracyM, stale, rf, fromTee, lie, heightAt, terrainVersion, clubs, strategy } = input
   const lieKey = `${lie.surface}|${[...lie.slopes].sort().join(',')}`
   // GPS readings jiggle by a metre or so every second; round to about 2 m so the advice only reworks on real moves.
   const lng = position ? Math.round(position[0] * 5e4) / 5e4 : null
@@ -540,6 +559,7 @@ function Advice({
         flagDistanceM: rf,
         fromTee,
         lie,
+        heightAt: heightAt ?? undefined,
         corners: lineOf(findLineOfPlay(features, hole))?.slice(1, -1) ?? [],
         hazards: features.filter(isHazard),
         greenTrust,
@@ -548,7 +568,7 @@ function Advice({
       }),
     // green and middle come from features and hole
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [features, hole, lng, lat, source, acc, stale, rf, fromTee, lieKey, clubs, strategy, greenTrust],
+    [features, hole, lng, lat, source, acc, stale, rf, fromTee, lieKey, heightAt, terrainVersion, clubs, strategy, greenTrust],
   )
   useEffect(() => {
     if (!onPlan) return

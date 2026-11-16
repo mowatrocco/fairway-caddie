@@ -331,6 +331,6 @@ describe('missing or weak data', () => {
     const r = advise(input(147))
     expect(r.notes.join(' ')).toMatch(/standard left\/right spread/)
     expect(r.notes.join(' ')).toMatch(/roll is estimated/)
-    expect(r.notes.join(' ')).toMatch(/Wind and slope are not included/)
+    expect(r.notes.join(' ')).toMatch(/Wind and slope aren't included here/)
   })
 })

@@ -59,6 +59,10 @@ export function AdviceCard({ result, units }: { result: CaddieResult; units: Uni
         {result.pinSource === 'rangefinder'
           ? `Playing to your rangefinder: ${d(result.targetM)} to the flag`
           : `Playing to the green middle: ${d(result.targetM)}`}
+        {result.playsLikeM !== null &&
+          result.heightDiffM !== null &&
+          Math.abs(result.heightDiffM) >= 2 &&
+          `, plays ${d(result.playsLikeM)} (${Math.round(Math.abs(result.heightDiffM))} m ${result.heightDiffM > 0 ? 'up' : 'down'})`}
       </p>
       <div className="advice-top">
         <p className="advice-club">{p.clubName}</p>
@@ -88,12 +92,18 @@ export function AdviceCard({ result, units }: { result: CaddieResult; units: Uni
       {result.confidence.because.length > 0 && (
         <p className="field-hint">Confidence is {result.confidence.level} because {result.confidence.because.join(', and ')}.</p>
       )}
-      <p className="field-hint">Wind and slope aren't included yet.</p>
+      {result.notes
+        .filter((n) => n.startsWith('Wind'))
+        .map((n) => (
+          <p key={n} className="field-hint">
+            {n}
+          </p>
+        ))}
       <details className="advice-more">
         <summary>How this was worked out</summary>
         <ul>
           {result.notes
-            .filter((n) => !n.startsWith('Wind and slope'))
+            .filter((n) => !n.startsWith('Wind'))
             .map((n) => (
               <li key={n}>{n}</li>
             ))}

@@ -51,6 +51,8 @@ export interface CaddieInput {
   lie?: Lie
   /** Swing for every club (a what-if). Normal if not given. */
   swing?: Swing
+  /** Ground height in metres at a point, or null where unknown. Without it the ground is treated as flat. */
+  heightAt?: (p: LngLat) => number | null
 }
 
 export interface ShotPlan {
@@ -91,6 +93,10 @@ export interface CaddieAdvice {
   reasons: string[]
   confidence: { level: ConfidenceLevel; because: string[] }
   notes: string[]
+  /** How far the target is above (+) or below (−) you, metres. Null without height data. */
+  heightDiffM: number | null
+  /** Target distance allowing for the height difference. Null without height data. */
+  playsLikeM: number | null
 }
 
 export type CaddieResult =
@@ -187,6 +193,11 @@ export function recommend(input: CaddieInput): CaddieResult {
   }
 
   const plane = localPlane(input.position)
+  // Ground heights, if we have them for where you're standing.
+  const heightAt = input.heightAt
+  const groundXY = heightAt ? (xy: XY) => heightAt(plane.toLngLat(xy)) : null
+  const h0 = groundXY ? groundXY([0, 0]) : null
+  const terrain: Terrain | null = groundXY && h0 !== null ? { ground: groundXY, h0 } : null
   const middleXY = plane.toXY(input.greenMiddle)
   const middleDist = Math.hypot(middleXY[0], middleXY[1])
   const pinXY: XY =
@@ -234,7 +245,7 @@ export function recommend(input: CaddieInput): CaddieResult {
     }
   }
 
-  const play = (m: ClubModel, aimAngle: number) => simulate(m, aimAngle, pinXY, greenRing, areas, boundaries, targetM)
+  const play = (m: ClubModel, aimAngle: number) => simulate(m, aimAngle, pinXY, greenRing, areas, boundaries, targetM, terrain)
 
   interface Candidate {
     m: ClubModel
@@ -291,7 +302,7 @@ export function recommend(input: CaddieInput): CaddieResult {
       leaveM: c.sim.leaveM,
       layup,
       expectedStrokes: c.sim.expectedStrokes,
-      zone: zoneOutline(c.m, c.aim.angle).map(plane.toLngLat),
+      zone: zoneOutline(c.m, c.aim.angle, terrain).map(plane.toLngLat),
       watchOut: describeHits(c.sim.hits, areas, boundaries, c.aim.angle, total),
     }
   }
@@ -308,7 +319,16 @@ export function recommend(input: CaddieInput): CaddieResult {
     .sort((a, b) => Math.abs(expectedTotal(a.m) - targetM) - Math.abs(expectedTotal(b.m) - targetM))[0]
   const bestStraight = candidates.find((c) => c.m === best.m && c.aim.angle === aims[straight].angle)!
 
-  const reasons = [...explain(best, naive, bestStraight, targetM, pinWord, alt), ...lieNotes(lie, swing)]
+  const hTarget = terrain ? terrain.ground(pinXY) : null
+  const heightDiffM = terrain && hTarget !== null ? hTarget - terrain.h0 : null
+  const playsLikeM = heightDiffM !== null ? targetM + heightDiffM * PLAYS_LIKE_PER_M : null
+  const heightReason =
+    heightDiffM !== null && Math.abs(heightDiffM) >= 2
+      ? [
+          `The ${pinWord} is ${Math.round(Math.abs(heightDiffM))} m ${heightDiffM > 0 ? 'above' : 'below'} you, so it plays about ${Math.round(playsLikeM!)} m.`,
+        ]
+      : []
+  const reasons = [...explain(best, naive, bestStraight, targetM, pinWord, alt), ...heightReason, ...lieNotes(lie, swing)]
   const confidence = rateConfidence(input, best.m)
   const notes: string[] = []
   if (driverLeftOut) notes.push("Driver is left out because you're not on the tee.")
@@ -318,7 +338,11 @@ export function recommend(input: CaddieInput): CaddieResult {
     )
   if (!best.m.spreadKnown) notes.push(`Using a standard left/right spread for ${best.m.club.name}. Add your own in My Bag for sharper advice.`)
   if (!best.m.rollKnown) notes.push(`No total distance for ${best.m.club.name}, so its roll is estimated.`)
-  notes.push('Wind and slope are not included yet.')
+  notes.push(
+    terrain
+      ? "Wind isn't included yet. Slope is, from LINZ ground heights."
+      : "Wind and slope aren't included here: no ground heights for this spot yet.",
+  )
 
   return {
     kind: 'advice',
@@ -331,6 +355,8 @@ export function recommend(input: CaddieInput): CaddieResult {
     reasons,
     confidence,
     notes,
+    heightDiffM,
+    playsLikeM,
   }
 }
 
@@ -355,6 +381,7 @@ function simulate(
   areas: Area[],
   boundaries: { id: string; line: XY[] }[],
   targetM: number,
+  terrain: Terrain | null = null,
 ): SimResult {
   const d = dirOf(aimAngle)
   const left: XY = [-d[1], d[0]]
@@ -372,9 +399,8 @@ function simulate(
   for (const [z1, z2] of NORMALS) {
     const carry = Math.max(m.carryM * 0.3, m.carryM + m.depthBiasM + z1 * m.depthSdM)
     const side = m.sideBiasM + (z2 >= 0 ? z2 * m.leftSdM : z2 * m.rightSdM)
-    const L: XY = [d[0] * carry + left[0] * side, d[1] * carry + left[1] * side]
-    const scale = 1 + m.rollShare
-    const F: XY = [L[0] * scale, L[1] * scale]
+    const L = landing(d, left, carry, side, m, terrain)
+    const F = finish(L, m.rollShare, terrain)
 
     let s: number
     const ob = boundaries.find((b) => crossesLine(origin, F, b.line))
@@ -424,17 +450,64 @@ function simulate(
   }
 }
 
+// ---------- Ground ----------
+
+export interface Terrain {
+  /** Height at a point in the local grid, or null. */
+  ground: (xy: XY) => number | null
+  /** Height where you're standing. */
+  h0: number
+}
+
+/** Each metre the landing spot is above you takes about a metre off the carry (and below adds one). */
+export const PLAYS_LIKE_PER_M = 1
+/** Roll grows on a downslope and shrinks on an upslope: ×(1 − grade × this). A 5% downslope runs 40% further. */
+export const ROLL_PER_GRADE = 8
+/** On a side slope the ball drifts downhill by this share of its roll per unit of grade. */
+export const SIDE_KICK = 3
+
+/** Where the ball first lands, allowing for the height of the ground there. */
+export function landing(d: XY, left: XY, carry: number, side: number, m: ClubModel, terrain: Terrain | null): XY {
+  const flat: XY = [d[0] * carry + left[0] * side, d[1] * carry + left[1] * side]
+  if (!terrain) return flat
+  const h = terrain.ground(flat)
+  if (h === null) return flat
+  const c = Math.max(m.carryM * 0.3, carry - (h - terrain.h0) * PLAYS_LIKE_PER_M)
+  return [d[0] * c + left[0] * side, d[1] * c + left[1] * side]
+}
+
+/** Where the ball stops after rolling on from L, running further downhill and drifting off side slopes. */
+export function finish(L: XY, rollShare: number, terrain: Terrain | null): XY {
+  const len = Math.hypot(L[0], L[1])
+  if (len === 0) return L
+  const u: XY = [L[0] / len, L[1] / len]
+  let roll = len * rollShare
+  let drift = 0
+  if (terrain && roll > 0) {
+    const g = (p: XY) => terrain.ground(p)
+    const a = g([L[0] + u[0] * 3, L[1] + u[1] * 3])
+    const b = g([L[0] - u[0] * 3, L[1] - u[1] * 3])
+    const v: XY = [-u[1], u[0]] // to the left
+    const l = g([L[0] + v[0] * 3, L[1] + v[1] * 3])
+    const r = g([L[0] - v[0] * 3, L[1] - v[1] * 3])
+    if (a !== null && b !== null) roll *= Math.min(2.5, Math.max(0.3, 1 - ((a - b) / 6) * ROLL_PER_GRADE))
+    if (l !== null && r !== null) drift = Math.max(-roll, Math.min(roll, -((l - r) / 6) * roll * SIDE_KICK))
+  }
+  return [L[0] + u[0] * roll - u[1] * drift, L[1] + u[1] * roll + u[0] * drift]
+}
+
 function crossesLine(a: XY, b: XY, line: XY[]): boolean {
   for (let i = 1; i < line.length; i++) if (segmentsCross(a, b, line[i - 1], line[i])) return true
   return false
 }
 
 /** Outline of where about two-thirds of shots finish (1 SD), as 24 points. */
-function zoneOutline(m: ClubModel, aimAngle: number): XY[] {
+function zoneOutline(m: ClubModel, aimAngle: number, terrain: Terrain | null = null): XY[] {
   const d = dirOf(aimAngle)
   const left: XY = [-d[1], d[0]]
   const scale = 1 + m.rollShare
-  const along0 = (m.carryM + m.depthBiasM) * scale
+  const nominal = landing(d, left, m.carryM + m.depthBiasM, m.sideBiasM, m, terrain)
+  const along0 = (nominal[0] * d[0] + nominal[1] * d[1]) * scale
   const pts: XY[] = []
   for (let i = 0; i < 24; i++) {
     const t = (i / 24) * 2 * Math.PI
