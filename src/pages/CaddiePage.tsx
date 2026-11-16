@@ -35,6 +35,8 @@ interface Props {
 const COURSE = southHead
 /** Further than this from the green and you're almost certainly on a different hole. */
 const WRONG_HOLE_M = 700
+/** Walk further than this from where you took a rangefinder reading and it stops being used. */
+const RF_MOVE_M = 15
 
 function savedHole(): number {
   const n = Number(sessionStorage.getItem('caddieHole'))
@@ -59,7 +61,8 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
   const [keepAwake, setKeepAwake] = useState(false)
   const [manualPos, setManualPos] = useState<LngLat | null>(null)
   const [measure, setMeasure] = useState<LngLat | null>(null)
-  const [rangefinder, setRangefinder] = useState<Record<number, number | null>>({})
+  // A reading belongs to the spot you took it from; walk on and it no longer applies.
+  const [rangefinder, setRangefinder] = useState<Record<number, { m: number; at: LngLat | null } | null>>({})
   const [strategy, setStrategyState] = useState<Strategy>('normal')
 
   useEffect(() => {
@@ -115,7 +118,10 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
   const boundaries = position && middle && !farAway ? analyseBoundaries(features, position, middle) : []
   const suggestion = manualPos ? null : suggestHole(features, gps.fix, hole)
 
-  const rf = rangefinder[hole] ?? null
+  const rfEntry = rangefinder[hole] ?? null
+  const rfMovedM = rfEntry?.at && position ? distanceM(rfEntry.at, position) : 0
+  const rfOld = rfEntry !== null && rfMovedM > RF_MOVE_M
+  const rf = rfEntry && !rfOld ? rfEntry.m : null
   const rfMismatch =
     rf !== null && dists && dists.frontM !== null && dists.backM !== null && !roughM && !farAway
       ? rf < dists.frontM - 5 || rf > dists.backM + 5
@@ -140,6 +146,39 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
           strategy,
         }
       : null
+
+  const rangefinderBlock = ring && (
+    <div className="rf-block">
+      <NumberField
+        label="Rangefinder to the flag"
+        name="rangefinder"
+        unit={u}
+        value={rf === null ? null : toDisplay(rf, units)}
+        onChange={(v) =>
+          setRangefinder((r) => ({ ...r, [hole]: v === null ? null : { m: fromDisplay(v, units), at: position } }))
+        }
+        hint={
+          rfOld
+            ? `Your last reading (${formatDistance(rfEntry!.m, units)} ${u}) was from ${formatDistance(rfMovedM, units)} ${u} back, so it's no longer used. Type a new one from here.`
+            : rf !== null
+              ? 'Club advice is playing to this reading.'
+              : 'Type in your rangefinder reading and the club advice plays to it instead of the green middle.'
+        }
+      />
+      {rfMismatch && (
+        <p className="msg msg-warn">
+          That doesn't fit between the front and back of the green from here. The GPS or this green's outline may be
+          off. Worth checking this hole in the course map.
+        </p>
+      )}
+    </div>
+  )
+  const trustLine = ring && (
+    <p className="field-hint trust-line">
+      Green: {TRUST_LABEL[green!.trust]}
+      {verifiedMiddle && ', middle checked by GPS'}. Hole {report.status === 'ready' ? 'fully mapped' : 'still being mapped'}.
+    </p>
+  )
 
   return (
     <section className="page caddie" aria-labelledby="caddie-title">
@@ -236,6 +275,7 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
               GPS is fair: distances could be out by up to {formatDistance(fairPm, units)} {u}.
             </p>
           )}
+          {!onGreen && rangefinderBlock}
           {adviceInput && (position || rf !== null) && (
             <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} />
           )}
@@ -286,6 +326,7 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
             <p className="field-hint">Tap the map to measure to any spot.</p>
           )}
           {dists && !farAway && !onGreen && <GreenNumbers d={dists} units={units} roughM={roughM} compact />}
+          {!onGreen && !farAway && rangefinderBlock}
           {adviceInput && position && !farAway && (
             <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} onPlan={setPlan} table />
           )}
@@ -299,29 +340,7 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
         </>
       )}
 
-      {ring && (
-        <>
-          <h2 className="section-title">Rangefinder</h2>
-          <NumberField
-            label="To the flag"
-            name="rangefinder"
-            unit={u}
-            value={rf === null ? null : toDisplay(rf, units)}
-            onChange={(v) => setRangefinder((r) => ({ ...r, [hole]: v === null ? null : fromDisplay(v, units) }))}
-            hint="Type in your rangefinder reading. Club advice uses it in place of the green middle."
-          />
-          {rfMismatch && (
-            <p className="msg msg-warn">
-              That doesn't fit between the front and back of the green from here. The GPS or this green's outline may be
-              off. Worth checking this hole in the course map.
-            </p>
-          )}
-          <p className="field-hint trust-line">
-            Green: {TRUST_LABEL[green!.trust]}
-            {verifiedMiddle && ', middle checked by GPS'}. Hole {report.status === 'ready' ? 'fully mapped' : 'still being mapped'}.
-          </p>
-        </>
-      )}
+      {trustLine}
 
       <div className="caddie-foot">
         {wake.supported ? (

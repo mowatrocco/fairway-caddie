@@ -54,6 +54,11 @@ export function AdviceCard({ result, units }: { result: CaddieResult; units: Uni
   const p = result.primary
   return (
     <div className="advice" data-testid="advice">
+      <p className="advice-target">
+        {result.pinSource === 'rangefinder'
+          ? `Playing to your rangefinder: ${d(result.targetM)} to the flag`
+          : `Playing to the green middle: ${d(result.targetM)}`}
+      </p>
       <div className="advice-top">
         <p className="advice-club">{p.clubName}</p>
         <span className={`advice-conf conf-${result.confidence.level}`}>Confidence: {CONF_LABEL[result.confidence.level]}</span>

@@ -1758,3 +1758,13 @@ html.mapper-open body {
   color: var(--ink-2);
   font-size: 13px;
 }
+
+.advice .advice-target {
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.rf-block {
+  margin-top: 16px;
+}
