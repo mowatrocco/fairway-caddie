@@ -8,7 +8,8 @@ import { formatDistance, fromDisplay, toDisplay, unitLabel } from '../lib/calcul
 import { checkHole, greenMiddle } from '../lib/course/holeChecks'
 import { findGreen, findGreenMiddle, findLineOfPlay, lineOf, pointOf, ringOf, TRUST_LABEL } from '../lib/course/features'
 import { isHazard } from '../lib/course/autoHoles'
-import { recommend, type CaddieResult } from '../lib/caddie/engine'
+import { recommend, type CaddieInput, type CaddieResult } from '../lib/caddie/engine'
+import { CaddieChat } from '../components/caddie/CaddieChat'
 import type { Strategy } from '../lib/caddie/scoring'
 import { AdviceCard, LiePicker, StrategyPicker, StrategyTable } from '../components/caddie/AdviceCard'
 import { isPlain, PLAIN_LIE, type Lie } from '../lib/caddie/lie'
@@ -334,7 +335,7 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
           {lieBlock}
           {!onGreen && rangefinderBlock}
           {adviceInput && (position || rf !== null) && (
-            <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} />
+            <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} chat onSetLie={setLie} />
           )}
         </>
       ) : (
@@ -533,6 +534,8 @@ function Advice({
   goToBag,
   onPlan,
   table,
+  chat,
+  onSetLie,
 }: {
   input: AdviceInput
   units: AppData['profile']['units']
@@ -540,6 +543,8 @@ function Advice({
   goToBag: () => void
   onPlan?: (p: { aim: LngLat; zone: LngLat[] } | null) => void
   table?: boolean
+  chat?: boolean
+  onSetLie?: (l: Lie) => void
 }) {
   const { features, hole, green, middle, greenTrust, position, source, accuracyM, stale, rf, fromTee, lie, heightAt, terrainVersion, clubs, strategy } = input
   const lieKey = `${lie.surface}|${[...lie.slopes].sort().join(',')}`
@@ -547,9 +552,8 @@ function Advice({
   const lng = position ? Math.round(position[0] * 5e4) / 5e4 : null
   const lat = position ? Math.round(position[1] * 5e4) / 5e4 : null
   const acc = accuracyM === null ? null : Math.round(accuracyM)
-  const result: CaddieResult = useMemo(
-    () =>
-      recommend({
+  const engineInput: CaddieInput = useMemo(
+    () => ({
         position: lng === null || lat === null ? null : [lng, lat],
         positionSource: source,
         positionAccuracyM: acc,
@@ -570,6 +574,7 @@ function Advice({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [features, hole, lng, lat, source, acc, stale, rf, fromTee, lieKey, heightAt, terrainVersion, clubs, strategy, greenTrust],
   )
+  const result: CaddieResult = useMemo(() => recommend(engineInput), [engineInput])
   useEffect(() => {
     if (!onPlan) return
     onPlan(result.kind === 'advice' ? { aim: result.primary.aim, zone: result.primary.zone } : null)
@@ -590,6 +595,17 @@ function Advice({
         </button>
       )}
       {table && <StrategyTable result={result} units={units} />}
+      {chat && (
+        <CaddieChat
+          input={engineInput}
+          result={result}
+          features={features}
+          units={units}
+          hole={hole}
+          position={position}
+          onSetLie={onSetLie}
+        />
+      )}
     </div>
   )
 }

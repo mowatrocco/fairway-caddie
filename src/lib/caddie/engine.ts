@@ -122,7 +122,7 @@ function mulberry32(seed: number) {
  * ways (mirrored left/right and long/short) so the made-up shots have no lean of
  * their own: with no hazards and no usual miss, the caddie aims straight.
  */
-const NORMALS: [number, number][] = (() => {
+export const NORMALS: [number, number][] = (() => {
   const rand = mulberry32(20261113)
   const out: [number, number][] = []
   while (out.length < SAMPLES) {
@@ -138,7 +138,12 @@ const NORMALS: [number, number][] = (() => {
 
 // ---------- Geometry in a flat grid centred on you ----------
 
-interface Area {
+export interface Boundary {
+  id: string
+  line: XY[]
+}
+
+export interface Area {
   id: string
   kind: FeatureKind
   ring: XY[]
@@ -150,12 +155,59 @@ interface Area {
 }
 
 const inBox = (p: XY, a: Area) => p[0] >= a.minX && p[0] <= a.maxX && p[1] >= a.minY && p[1] <= a.maxY
-const inArea = (p: XY, a: Area) => inBox(p, a) && pointInRing(p, a.ring)
+export const inArea = (p: XY, a: Area) => inBox(p, a) && pointInRing(p, a.ring)
 const LABEL: Partial<Record<FeatureKind, string>> = { water: 'Water', bunker: 'Bunker', trouble: 'Trouble', 'out-of-bounds': 'Out of bounds' }
 
 /** Compass-style angle (radians, 0 = +y/north, clockwise) to a unit vector in x/y. */
-const dirOf = (a: number): XY => [Math.sin(a), Math.cos(a)]
-const angleOf = (p: XY) => Math.atan2(p[0], p[1])
+export const dirOf = (a: number): XY => [Math.sin(a), Math.cos(a)]
+export const angleOf = (p: XY) => Math.atan2(p[0], p[1])
+
+
+/** Everything about the shot in a flat grid centred on where you're playing from. */
+export interface Scene {
+  plane: ReturnType<typeof localPlane>
+  terrain: Terrain | null
+  pinXY: XY
+  targetM: number
+  pinWord: 'flag' | 'middle'
+  greenRing: XY[]
+  areas: Area[]
+  boundaries: Boundary[]
+}
+
+export function buildScene(input: CaddieInput, position: LngLat): Scene {
+  const plane = localPlane(position)
+  // Ground heights, if we have them for where you're standing.
+  const heightAt = input.heightAt
+  const groundXY = heightAt ? (xy: XY) => heightAt(plane.toLngLat(xy)) : null
+  const h0 = groundXY ? groundXY([0, 0]) : null
+  const terrain: Terrain | null = groundXY && h0 !== null ? { ground: groundXY, h0 } : null
+  const middleXY = plane.toXY(input.greenMiddle)
+  const middleDist = Math.hypot(middleXY[0], middleXY[1])
+  const pinXY: XY =
+    input.flagDistanceM !== null && middleDist > 0
+      ? [(middleXY[0] / middleDist) * input.flagDistanceM, (middleXY[1] / middleDist) * input.flagDistanceM]
+      : middleXY
+  const targetM = Math.hypot(pinXY[0], pinXY[1])
+  const pinWord: 'flag' | 'middle' = input.flagDistanceM !== null ? 'flag' : 'middle'
+  // Hazards near enough to matter, in the flat grid.
+  const greenRing = input.green.map(plane.toXY)
+  const areas: Area[] = []
+  const boundaries: Boundary[] = []
+  for (const f of input.hazards) {
+    if (f.geometry.type === 'Polygon') {
+      const ring = f.geometry.coordinates[0].slice(0, -1).map(plane.toXY)
+      const xs = ring.map((p) => p[0])
+      const ys = ring.map((p) => p[1])
+      const a: Area = { id: f.id, kind: f.kind, ring, minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys), centre: centroid(ring) }
+      if (Math.hypot(a.centre[0], a.centre[1]) < IGNORE_HAZARDS_BEYOND_M) areas.push(a)
+    } else if (f.geometry.type === 'LineString' && f.kind === 'out-of-bounds') {
+      boundaries.push({ id: f.id, line: f.geometry.coordinates.map(plane.toXY) })
+    }
+  }
+
+  return { plane, terrain, pinXY, targetM, pinWord, greenRing, areas, boundaries }
+}
 
 export function recommend(input: CaddieInput): CaddieResult {
   const lie = input.lie ?? PLAIN_LIE
@@ -192,20 +244,7 @@ export function recommend(input: CaddieInput): CaddieResult {
     }
   }
 
-  const plane = localPlane(input.position)
-  // Ground heights, if we have them for where you're standing.
-  const heightAt = input.heightAt
-  const groundXY = heightAt ? (xy: XY) => heightAt(plane.toLngLat(xy)) : null
-  const h0 = groundXY ? groundXY([0, 0]) : null
-  const terrain: Terrain | null = groundXY && h0 !== null ? { ground: groundXY, h0 } : null
-  const middleXY = plane.toXY(input.greenMiddle)
-  const middleDist = Math.hypot(middleXY[0], middleXY[1])
-  const pinXY: XY =
-    input.flagDistanceM !== null && middleDist > 0
-      ? [(middleXY[0] / middleDist) * input.flagDistanceM, (middleXY[1] / middleDist) * input.flagDistanceM]
-      : middleXY
-  const targetM = Math.hypot(pinXY[0], pinXY[1])
-  const pinWord = input.flagDistanceM !== null ? 'flag' : 'middle'
+  const { plane, terrain, pinXY, targetM, pinWord, greenRing, areas, boundaries } = buildScene(input, input.position)
 
   const shortest = [...models].sort((a, b) => a.carryM - b.carryM)[0]
   if (targetM + 10 < shortest.carryM) {
@@ -217,22 +256,6 @@ export function recommend(input: CaddieInput): CaddieResult {
       reason: input.clubs.some((c) => c.partials && Object.values(c.partials).some((v) => v !== null))
         ? `That's inside your shortest shot in the wedge chart (${shortest.club.name}, about ${Math.round(shortest.carryM)} m carry). Chip or pitch it, or add a shorter swing to your wedge chart in My Bag.`
         : `That's inside your shortest full shot (${shortest.club.name}, about ${Math.round(shortest.carryM)} m carry). It needs a part swing: add your part-swing carries to the wedge chart in My Bag and the caddie can pick one.`,
-    }
-  }
-
-  // Hazards near enough to matter, in the flat grid.
-  const greenRing = input.green.map(plane.toXY)
-  const areas: Area[] = []
-  const boundaries: { id: string; line: XY[] }[] = []
-  for (const f of input.hazards) {
-    if (f.geometry.type === 'Polygon') {
-      const ring = f.geometry.coordinates[0].slice(0, -1).map(plane.toXY)
-      const xs = ring.map((p) => p[0])
-      const ys = ring.map((p) => p[1])
-      const a: Area = { id: f.id, kind: f.kind, ring, minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys), centre: centroid(ring) }
-      if (Math.hypot(a.centre[0], a.centre[1]) < IGNORE_HAZARDS_BEYOND_M) areas.push(a)
-    } else if (f.geometry.type === 'LineString' && f.kind === 'out-of-bounds') {
-      boundaries.push({ id: f.id, line: f.geometry.coordinates.map(plane.toXY) })
     }
   }
 
@@ -381,7 +404,7 @@ function simulate(
   pin: XY,
   green: XY[],
   areas: Area[],
-  boundaries: { id: string; line: XY[] }[],
+  boundaries: Boundary[],
   targetM: number,
   terrain: Terrain | null = null,
 ): SimResult {
@@ -404,40 +427,17 @@ function simulate(
     const L = landing(d, left, carry, side, m, terrain)
     const F = finish(L, m.rollShare, terrain)
 
-    let s: number
-    const ob = boundaries.find((b) => crossesLine(origin, F, b.line))
-    if (ob) {
-      hit(ob.id)
-      pen++
-      s = 1 + strokesFromOffGreen(targetM) // stroke and distance: play again from here
-    } else {
-      const water = areas.find((a) => a.kind === 'water' && (inArea(L, a) || inArea(F, a)))
-      if (water) {
-        hit(water.id)
-        pen++
-        s = 1 + strokesFromOffGreen(Math.hypot(L[0] - pin[0], L[1] - pin[1]))
-      } else {
-        const dPin = Math.hypot(F[0] - pin[0], F[1] - pin[1])
-        leaveSum += dPin
-        leaveN++
-        const tr = areas.find((a) => a.kind === 'trouble' && (inArea(L, a) || inArea(F, a)))
-        const bk = !tr && areas.find((a) => a.kind === 'bunker' && (inArea(F, a) || inArea(L, a)))
-        if (tr) {
-          hit(tr.id)
-          trouble++
-          s = strokesFromOffGreen(dPin) + TROUBLE_EXTRA
-        } else if (bk) {
-          hit(bk.id)
-          bunker++
-          s = strokesFromOffGreen(dPin) + BUNKER_EXTRA
-        } else if (pointInRing(F, green)) {
-          green_++
-          s = strokesFromOnGreen(dPin)
-        } else {
-          s = strokesFromOffGreen(dPin)
-        }
-      }
+    const o = scoreFinish(L, F, origin, pin, green, areas, boundaries)
+    if (o.hazardId) hit(o.hazardId)
+    if (o.outcome === 'ob' || o.outcome === 'water') pen++
+    else {
+      leaveSum += o.dPin
+      leaveN++
+      if (o.outcome === 'trouble') trouble++
+      else if (o.outcome === 'bunker') bunker++
+      else if (o.outcome === 'green') green_++
     }
+    const s = o.strokes
     strokes += 1 + s
   }
   const n = NORMALS.length
@@ -498,6 +498,41 @@ export function finish(L: XY, rollShare: number, terrain: Terrain | null): XY {
   return [L[0] + u[0] * roll - u[1] * drift, L[1] + u[1] * roll + u[0] * drift]
 }
 
+export type Outcome = 'ob' | 'water' | 'trouble' | 'bunker' | 'green' | 'off-green'
+
+/**
+ * How a shot from `from` that lands at L and stops at F turns out, and the strokes
+ * still needed to finish the hole from there (penalties included).
+ */
+export function scoreFinish(
+  L: XY,
+  F: XY,
+  from: XY,
+  pin: XY,
+  green: XY[],
+  areas: Area[],
+  boundaries: Boundary[],
+): { outcome: Outcome; strokes: number; dPin: number; hazardId: string | null } {
+  const ob = boundaries.find((b) => crossesLine(from, F, b.line))
+  if (ob) {
+    // Stroke and distance: play again from where you were.
+    const back = Math.hypot(from[0] - pin[0], from[1] - pin[1])
+    return { outcome: 'ob', strokes: 1 + strokesFromOffGreen(back), dPin: back, hazardId: ob.id }
+  }
+  const water = areas.find((a) => a.kind === 'water' && (inArea(L, a) || inArea(F, a)))
+  if (water) {
+    const d = Math.hypot(L[0] - pin[0], L[1] - pin[1])
+    return { outcome: 'water', strokes: 1 + strokesFromOffGreen(d), dPin: d, hazardId: water.id }
+  }
+  const dPin = Math.hypot(F[0] - pin[0], F[1] - pin[1])
+  const tr = areas.find((a) => a.kind === 'trouble' && (inArea(L, a) || inArea(F, a)))
+  if (tr) return { outcome: 'trouble', strokes: strokesFromOffGreen(dPin) + TROUBLE_EXTRA, dPin, hazardId: tr.id }
+  const bk = areas.find((a) => a.kind === 'bunker' && (inArea(F, a) || inArea(L, a)))
+  if (bk) return { outcome: 'bunker', strokes: strokesFromOffGreen(dPin) + BUNKER_EXTRA, dPin, hazardId: bk.id }
+  if (pointInRing(F, green)) return { outcome: 'green', strokes: strokesFromOnGreen(dPin), dPin, hazardId: null }
+  return { outcome: 'off-green', strokes: strokesFromOffGreen(dPin), dPin, hazardId: null }
+}
+
 function crossesLine(a: XY, b: XY, line: XY[]): boolean {
   for (let i = 1; i < line.length; i++) if (segmentsCross(a, b, line[i - 1], line[i])) return true
   return false
@@ -543,7 +578,7 @@ function placeOf(a: Area, aimAngle: number, finishM: number): string {
 function describeHits(
   hits: Map<string, number>,
   areas: Area[],
-  boundaries: { id: string; line: XY[] }[],
+  boundaries: Boundary[],
   aimAngle: number,
   finishM: number,
 ): string[] {

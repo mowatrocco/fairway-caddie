@@ -1824,3 +1824,83 @@ html.mapper-open body {
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
+
+/* ---------- Caddie chat ---------- */
+
+.chat {
+  margin-top: 22px;
+}
+
+.chat-log {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-turn + .chat-turn {
+  margin-top: 12px;
+}
+
+.chat-q {
+  margin: 0 0 6px auto;
+  max-width: 85%;
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--green);
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.chat-a {
+  margin: 0;
+  max-width: 92%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px 14px 14px 4px;
+  background: var(--surface);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.chat-wait {
+  color: var(--ink-2);
+  font-style: italic;
+}
+
+.chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.chat-chips .chip {
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 15px;
+}
+
+.chat-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chat-form .input {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-turn:last-child .chat-a:not(.chat-wait) {
+    animation: chat-in 160ms ease-out;
+  }
+}
+
+@keyframes chat-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}

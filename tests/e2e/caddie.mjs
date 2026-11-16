@@ -251,6 +251,45 @@ try {
   check(JSON.stringify(await pressed()) === '["Fairway"]', 'walking on to the next shot resets the lie')
   await goTo(P)
 
+  // 3b3. Caddie chat
+  const chatAnswers = () => page.$$eval('[data-testid="chat-answer"]', (ns) => ns.map((n) => n.textContent))
+  const lastAnswer = async () => {
+    await page.waitForFunction(() => {
+      const a = [...document.querySelectorAll('[data-testid="chat-answer"]')].pop()
+      return a && a.textContent !== 'Working it out…'
+    }, { timeout: 15000 })
+    return (await chatAnswers()).pop()
+  }
+  await clickText('[data-testid="chat"] .chip', 'What club?')
+  let ans = await lastAnswer()
+  const pickNow = (await page.$eval('[data-testid="advice"] .advice-club', (n) => n.textContent)).replace(/^Ping G25 |^Mizuno |^Cleveland /, '')
+  check(ans.startsWith(pickNow) && /Confidence is/.test(ans), `tapping "What club?" answers with the pick and why (${ans.slice(0, 60)}…)`)
+  await page.type('#chat-input', 'why not 9 iron')
+  await page.keyboard.press('Enter')
+  ans = await lastAnswer()
+  check(/^9 Iron: carries about \d+ m/.test(ans) && /My pick, /.test(ans) && /On average/.test(ans), `typing "why not 9 iron" compares it with the pick (${ans.slice(0, 70)}…)`)
+  await page.type('#chat-input', 'lay up or go for it?')
+  await page.keyboard.press('Enter')
+  ans = await lastAnswer()
+  check(/^Go for it: /.test(ans), `"lay up or go" gives both plans (${ans.slice(0, 70)}…)`)
+  await clickText('[data-testid="chat"] .chip', 'Safe miss?')
+  ans = await lastAnswer()
+  check(/^Safest miss is (short|long|left|right)/.test(ans), 'safe miss is answered')
+  await page.type('#chat-input', "I'm in the rough")
+  await page.keyboard.press('Enter')
+  ans = await lastAnswer()
+  await settle()
+  check(ans.startsWith('Got it: Light rough') && (await page.$$eval('[data-testid="lie"] .chip-on', (ns) => ns.map((n) => n.textContent))).includes('Light rough'), 'telling the chat your lie sets the lie buttons too')
+  await page.type('#chat-input', 'who won the rugby')
+  await page.keyboard.press('Enter')
+  ans = await lastAnswer()
+  check(ans.startsWith("I didn't catch that one"), 'an unknown question gets the list of what it can answer')
+  await page.screenshot({ path: join(SHOTS, '31-caddie-chat-iphone15.png'), fullPage: true })
+  await clickText('[data-testid="lie"] button', 'Fairway')
+  await goTo(dest(G, 200, 125))
+  check((await chatAnswers()).length === 0, 'walking on to the next shot clears the chat')
+  await goTo(P)
+
   // 3c. Driver only from the tee
   const mainClubNow = () => page.$eval('[data-testid="advice"] .advice-club', (n) => n.textContent)
   await clickText('.strategy button', 'Aggressive')
