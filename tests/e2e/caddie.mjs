@@ -102,6 +102,8 @@ async function preparedPage(context, { linzKey = null, noDistances = false } = {
       })
       rec.data.courseMaps[0].features = features
       rec.data.profile.usualTees = 'white'
+      const driver = rec.data.bag.find((c) => c.category === 'driver')
+      if (driver) Object.assign(driver, { roughM: 200, confidence: 'guess' })
       if (noDistances) for (const c of rec.data.bag) Object.assign(c, { carryM: null, totalM: null, roughM: null, confidence: 'unknown' })
       await new Promise((r) => (store().put(rec, 'appData').onsuccess = r))
       if (key) await new Promise((r) => (store().put(key, 'setting:linzKey').onsuccess = r))
@@ -189,6 +191,16 @@ try {
   await clickText('.strategy button', 'Aggressive')
   await settle()
   check((await advice()) !== '', 'Aggressive also gives advice')
+
+  // 3c. Driver only from the tee
+  const mainClubNow = () => page.$eval('[data-testid="advice"] .advice-club', (n) => n.textContent)
+  await clickText('.strategy button', 'Aggressive')
+  await goTo(dest(G, 200, 315))
+  check(/Driver/.test(await mainClubNow()), `on the white tee (315 m) it suggests driver (${await mainClubNow()})`)
+  await goTo(dest(G, 200, 215))
+  const fairwayText = await page.$eval('[data-testid="advice"]', (n) => n.textContent)
+  check(!/Driver/.test(await mainClubNow()) && fairwayText.includes("Driver is left out because you're not on the tee"), `in the fairway (215 m out) it never suggests driver (${await mainClubNow()})`)
+  await goTo(P)
   await clickText('.strategy button', 'Safe')
   await settle()
 

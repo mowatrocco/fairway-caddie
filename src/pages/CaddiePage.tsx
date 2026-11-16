@@ -37,6 +37,8 @@ const COURSE = southHead
 const WRONG_HOLE_M = 700
 /** Walk further than this from where you took a rangefinder reading and it stops being used. */
 const RF_MOVE_M = 15
+/** Within this of one of the hole's tee markers counts as being on the tee. */
+const ON_TEE_M = 25
 
 function savedHole(): number {
   const n = Number(sessionStorage.getItem('caddieHole'))
@@ -129,6 +131,16 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
 
   const report = checkHole(features, hole, COURSE)
 
+  // Driver is only offered from the tee. Use the mapped tees; if none are mapped yet,
+  // being about the card's length from the green counts.
+  const teeSpots = features.filter((f) => f.kind === 'tee' && f.holes.includes(hole)).map(pointOf).filter((p): p is LngLat => p !== null)
+  const fromTee =
+    position !== null &&
+    !farAway &&
+    (teeSpots.length > 0
+      ? teeSpots.some((t) => distanceM(t, position) <= ON_TEE_M)
+      : dists !== null && Math.abs(dists.middleM - card.metres) <= ON_TEE_M + 10)
+
   const adviceInput: AdviceInput | null =
     ring && middle && green && !onGreen
       ? {
@@ -142,6 +154,7 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
           accuracyM: manualPos || status.kind !== 'fix' ? null : status.accuracyM,
           stale: !manualPos && status.kind === 'fix' && status.stale,
           rf,
+          fromTee,
           clubs: data.bag,
           strategy,
         }
@@ -459,6 +472,7 @@ interface AdviceInput {
   accuracyM: number | null
   stale: boolean
   rf: number | null
+  fromTee: boolean
   clubs: Club[]
   strategy: Strategy
 }
@@ -479,7 +493,7 @@ function Advice({
   onPlan?: (p: { aim: LngLat; zone: LngLat[] } | null) => void
   table?: boolean
 }) {
-  const { features, hole, green, middle, greenTrust, position, source, accuracyM, stale, rf, clubs, strategy } = input
+  const { features, hole, green, middle, greenTrust, position, source, accuracyM, stale, rf, fromTee, clubs, strategy } = input
   // GPS readings jiggle by a metre or so every second; round to about 2 m so the advice only reworks on real moves.
   const lng = position ? Math.round(position[0] * 5e4) / 5e4 : null
   const lat = position ? Math.round(position[1] * 5e4) / 5e4 : null
@@ -494,6 +508,7 @@ function Advice({
         green,
         greenMiddle: middle,
         flagDistanceM: rf,
+        fromTee,
         corners: lineOf(findLineOfPlay(features, hole))?.slice(1, -1) ?? [],
         hazards: features.filter(isHazard),
         greenTrust,
@@ -502,7 +517,7 @@ function Advice({
       }),
     // green and middle come from features and hole
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [features, hole, lng, lat, source, acc, stale, rf, clubs, strategy, greenTrust],
+    [features, hole, lng, lat, source, acc, stale, rf, fromTee, clubs, strategy, greenTrust],
   )
   useEffect(() => {
     if (!onPlan) return

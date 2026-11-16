@@ -37,6 +37,8 @@ export interface CaddieInput {
   greenMiddle: LngLat
   /** Rangefinder distance to the flag, metres (flag assumed on your line to the green middle). */
   flagDistanceM: number | null
+  /** True when you're on this hole's tee. Driver is only suggested from the tee. */
+  fromTee: boolean
   /** Dog-leg corners on the line of play, tee to green order. */
   corners: LngLat[]
   /** Hazards and out-of-bounds lines anywhere on the course. */
@@ -145,9 +147,15 @@ const dirOf = (a: number): XY => [Math.sin(a), Math.cos(a)]
 const angleOf = (p: XY) => Math.atan2(p[0], p[1])
 
 export function recommend(input: CaddieInput): CaddieResult {
-  const models = input.clubs.map(modelClub).filter((m): m is ClubModel => m !== null)
-  if (models.length === 0) {
+  const usable = input.clubs.map(modelClub).filter((m): m is ClubModel => m !== null)
+  if (usable.length === 0) {
     return { kind: 'none', reason: 'No clubs have a distance yet. Add them in My Bag and the caddie can advise.' }
+  }
+  // Driver off the deck is a specialist shot: only offer it from the tee.
+  const models = input.fromTee ? usable : usable.filter((m) => m.club.category !== 'driver')
+  const driverLeftOut = models.length < usable.length
+  if (models.length === 0) {
+    return { kind: 'none', reason: 'Your driver is the only club with a distance, and driver is only suggested from the tee. Add more clubs in My Bag.' }
   }
 
   // No position: only the rangefinder distance to go on.
@@ -292,6 +300,7 @@ export function recommend(input: CaddieInput): CaddieResult {
   const reasons = explain(best, naive, bestStraight, targetM, pinWord, alt)
   const confidence = rateConfidence(input, best.m)
   const notes: string[] = []
+  if (driverLeftOut) notes.push("Driver is left out because you're not on the tee.")
   if (best.m.carryAssumed)
     notes.push(
       `${best.m.club.name}'s distance isn't marked as carry or total yet, so it's treated as carry. If it's really where the ball finishes, this could come up a few metres short.`,

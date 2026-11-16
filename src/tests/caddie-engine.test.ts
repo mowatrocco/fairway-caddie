@@ -61,6 +61,7 @@ function input(greenAt: number, hazards: CourseFeature[] = [], extra: Partial<Ca
     position: ME,
     positionSource: 'gps',
     positionAccuracyM: 4,
+    fromTee: false,
     green: box(middle, 13, 11),
     greenMiddle: middle,
     flagDistanceM: null,
@@ -212,6 +213,18 @@ describe('dog-legs', () => {
     expect(r.primary.pTrouble).toBeLessThan(0.1)
     expect(r.primary.layup).toBe(true)
     expect(distanceM(r.primary.aim, corner)).toBeLessThan(60)
+  })
+})
+
+describe('driver', () => {
+  it('is suggested from the tee when the hole needs it', () => {
+    expect(advise(input(300, [], { fromTee: true })).primary.clubName).toBe('Driver')
+  })
+  it('is never suggested from the fairway, and the advice says why', () => {
+    const r = advise(input(300))
+    expect(r.primary.clubName).not.toBe('Driver')
+    expect(r.alternative?.clubName).not.toBe('Driver')
+    expect(r.notes.join(' ')).toMatch(/Driver is left out because you're not on the tee/)
   })
 })
 
