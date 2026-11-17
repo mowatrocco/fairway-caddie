@@ -54,6 +54,7 @@ export function starterData(): AppData {
     },
     bag: starterBag(),
     courseMaps: [emptyCourseMap('south-head')],
+    rounds: [],
   }
 }
 

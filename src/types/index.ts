@@ -1,3 +1,4 @@
+import type { Round } from './round'
 import type { CourseMap } from './courseMap'
 
 // Core data types for Fairway Caddie.
@@ -68,7 +69,9 @@ export interface AppData {
   bag: Club[]
   /** Mapped course geometry, one entry per course. */
   courseMaps: CourseMap[]
+  /** Rounds you've scored, oldest first. */
+  rounds: Round[]
 }
 
-/** 1 = bag + profile. 2 = adds course maps. */
-export const SCHEMA_VERSION = 2
+/** 1 = bag + profile. 2 = adds course maps. 3 = adds rounds. */
+export const SCHEMA_VERSION = 3

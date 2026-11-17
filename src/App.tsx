@@ -28,6 +28,8 @@ export default function App() {
   const store = useAppStore()
   const [tab, setTab] = useState<Tab>(tabFromHash)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Which hole the Round tab opens on when you tap "Score this hole" on the Caddie screen.
+  const [roundHole, setRoundHole] = useState<number | null>(null)
   const [mapOpen, setMapOpen] = useState(() => window.location.hash === '#map')
 
   useEffect(() => {
@@ -49,6 +51,7 @@ export default function App() {
   }
 
   const go = (t: Tab) => {
+    if (t !== 'round') setRoundHole(null)
     setTab(t)
     history.replaceState(null, '', `#${t}`)
     window.scrollTo(0, 0)
@@ -86,8 +89,18 @@ export default function App() {
       )}
 
       <main className="main">
-        {tab === 'caddie' && <CaddiePage data={data} goToBag={() => go('bag')} openMap={openMap} />}
-        {tab === 'round' && <RoundPage profile={data.profile} />}
+        {tab === 'caddie' && (
+          <CaddiePage
+            data={data}
+            goToBag={() => go('bag')}
+            openMap={openMap}
+            scoreHole={(h) => {
+              setRoundHole(h)
+              go('round')
+            }}
+          />
+        )}
+        {tab === 'round' && <RoundPage data={data} dispatch={dispatch} initialHole={roundHole} />}
         {tab === 'bag' && <BagPage bag={data.bag} units={data.profile.units} dispatch={dispatch} />}
         {tab === 'stats' && <StatsPage data={data} />}
       </main>

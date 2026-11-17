@@ -90,11 +90,29 @@ export const courseMapSchema = z.object({
   updatedAt: z.string(),
 })
 
+const holeScoreSchema = z.object({
+  hole: z.number().int().min(1).max(18),
+  strokes: z.number().int().min(1).max(20).nullable(),
+  putts: z.number().int().min(0).max(10).nullable(),
+  penalties: z.number().int().min(0).max(10),
+  fairway: z.enum(['hit', 'left', 'right']).nullable(),
+})
+
+export const roundSchema = z.object({
+  id: z.string().min(1),
+  courseId: z.string().min(1),
+  teeId: z.string().min(1),
+  startedAt: z.string(),
+  finishedAt: z.string().nullable(),
+  holes: z.array(holeScoreSchema).length(18),
+})
+
 export const appDataSchema = z
   .object({
     profile: profileSchema,
     bag: z.array(clubSchema).max(30),
     courseMaps: z.array(courseMapSchema).max(20),
+    rounds: z.array(roundSchema).max(2000),
   })
   .refine((d) => new Set(d.bag.map((c) => c.id)).size === d.bag.length, {
     message: 'Two clubs share the same id.',
@@ -110,6 +128,7 @@ export const backupSchema = z.object({
 /**
  * Bring data saved by an older version up to date before it is checked.
  * v1 → v2: course maps added (empty South Head map).
+ * v2 → v3: rounds added (none yet).
  */
 export function migrateAppData(raw: unknown, fromVersion: number): unknown {
   let data = raw
@@ -118,6 +137,9 @@ export function migrateAppData(raw: unknown, fromVersion: number): unknown {
       ...(data as object),
       courseMaps: [{ courseId: 'south-head', features: [], updatedAt: new Date(0).toISOString() }],
     }
+  }
+  if (fromVersion < 3 && data && typeof data === 'object' && !('rounds' in data)) {
+    data = { ...(data as object), rounds: [] }
   }
   return data
 }

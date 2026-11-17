@@ -26,6 +26,7 @@ import {
 } from '../lib/caddie/wind'
 import { isPlain, PLAIN_LIE, type Lie } from '../lib/caddie/lie'
 import { useTerrain } from '../lib/terrain/useTerrain'
+import { activeRound, formatToPar, roundTotals } from '../lib/rounds/score'
 import { suggestSlopes, type HeightAt } from '../lib/terrain/terrain'
 import { analyseBoundaries, analyseHazards } from '../lib/course/hazards'
 import { southHead } from '../data/courses/southHead'
@@ -46,6 +47,8 @@ interface Props {
   data: AppData
   goToBag: () => void
   openMap: () => void
+  /** Open the Round tab on a hole. */
+  scoreHole: (hole: number) => void
 }
 
 const COURSE = southHead
@@ -69,7 +72,8 @@ function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
-export function CaddiePage({ data, goToBag, openMap }: Props) {
+export function CaddiePage({ data, goToBag, openMap, scoreHole }: Props) {
+  const liveRound = activeRound(data.rounds)
   const units = data.profile.units
   const u = unitLabel(units)
   const features = useMemo(() => data.courseMaps.find((m) => m.courseId === COURSE.id)?.features ?? [], [data.courseMaps])
@@ -139,7 +143,9 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
     manualPos || status.kind !== 'fix' ? null : status.stale || status.accuracyM > FAIR_M ? status.accuracyM : null
   const fairPm = !manualPos && status.kind === 'fix' && !status.stale && status.grade === 'fair' ? status.accuracyM : null
 
-  const usual = COURSE.tees.find((t) => t.id === data.profile.usualTees) ?? COURSE.tees.find((t) => t.id === 'white')!
+  // During a round, the card is the tees you're playing.
+  const usual =
+    COURSE.tees.find((t) => t.id === (liveRound?.teeId ?? data.profile.usualTees)) ?? COURSE.tees.find((t) => t.id === 'white')!
   const card = usual.holes.find((h) => h.hole === hole)!
   const green = findGreen(features, hole)
   const ring = ringOf(green)
@@ -320,6 +326,21 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
           </button>
         </div>
       </div>
+
+      {liveRound && (
+        <div className="round-bar" data-testid="round-bar">
+          <span>
+            Round:{' '}
+            {(() => {
+              const t = roundTotals(liveRound, COURSE.tees.find((x) => x.id === liveRound.teeId) ?? COURSE.tees[0])
+              return t.played === 0 ? 'no holes scored yet' : `${formatToPar(t.toPar)} through ${t.played}`
+            })()}
+          </span>
+          <button className="btn btn-small" onClick={() => scoreHole(hole)}>
+            Score hole {hole}
+          </button>
+        </div>
+      )}
 
       {gpsOn === false && (
         <div className="callout">

@@ -430,6 +430,20 @@ try {
   await settle(800)
   check((await page.$eval('.strategy [aria-checked="true"]', (n) => n.textContent)) === 'Safe', 'the strategy you picked is remembered after reopening')
 
+  // 9c. A round in progress shows on the Caddie screen, with a shortcut to score the hole
+  const caddieHole = await page.$eval('#caddie-title', (n) => n.textContent)
+  await clickText('.tab', 'Round')
+  await clickText('button', 'Start round')
+  await page.waitForSelector('[data-testid="hole-card"]')
+  await clickText('.tab', 'Caddie')
+  await page.waitForSelector('[data-testid="round-bar"]')
+  check((await page.$eval('[data-testid="round-bar"]', (n) => n.innerText)).includes('no holes scored yet'), 'the Caddie screen shows the round in progress')
+  await clickText('[data-testid="round-bar"] button', 'Score hole')
+  await page.waitForSelector('[data-testid="hole-card"]')
+  check((await page.$eval('.hole-no', (n) => n.textContent)) === caddieHole, `"Score hole" opens the Round tab on that hole (${caddieHole})`)
+  await clickText('.tab', 'Caddie')
+  await page.waitForSelector('[data-testid="advice"]')
+
   // 10. Keep-screen-on switch is offered
   check((await text()).includes('Keep screen on'), 'keep-screen-on switch is offered')
 
