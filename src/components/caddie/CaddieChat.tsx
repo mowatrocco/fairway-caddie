@@ -4,6 +4,7 @@ import type { CourseFeature } from '../../types/courseMap'
 import { answer, parseQuestion, shortName } from '../../lib/caddie/chat'
 import type { CaddieInput, CaddieResult } from '../../lib/caddie/engine'
 import type { Lie } from '../../lib/caddie/lie'
+import type { WindDir, WindStrength } from '../../lib/caddie/wind'
 import { distanceBasis } from '../../lib/calculations/clubs'
 import { distanceM, type LngLat } from '../../lib/geo/geodesic'
 
@@ -26,6 +27,7 @@ interface Props {
   hole: number
   position: LngLat | null
   onSetLie?: (l: Lie) => void
+  onSetWind?: (w: { dirs: WindDir[]; strength: WindStrength | null }) => void
 }
 
 function neighbours(clubs: Club[], id: string, fromTee: boolean): Club[] {
@@ -38,7 +40,7 @@ function neighbours(clubs: Club[], id: string, fromTee: boolean): Club[] {
 }
 
 /** Ask the caddie about this shot: typed, or one tap. Works with no signal. */
-export function CaddieChat({ input, result, features, units, hole, position, onSetLie }: Props) {
+export function CaddieChat({ input, result, features, units, hole, position, onSetLie, onSetWind }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [text, setText] = useState('')
   const nextId = useRef(1)
@@ -54,6 +56,7 @@ export function CaddieChat({ input, result, features, units, hole, position, onS
       const reply = answer(parseQuestion(question, input.clubs), { input, result, features, units })
       setMessages((m) => m.map((x) => (x.id === id ? { ...x, a: reply.text } : x)))
       if (reply.lie) onSetLie?.(reply.lie)
+      if (reply.wind) onSetWind?.(reply.wind)
     }, 30)
   }
 

@@ -195,3 +195,20 @@ describe('answers', () => {
     expect(say('safe miss', ctx)).toMatch(/need your position/)
   })
 })
+
+describe('wind in the chat', () => {
+  it('recognises wind talk', () => {
+    expect(parseQuestion("it's into the wind", BAG)).toEqual({ kind: 'wind', dirs: ['into'], strength: null })
+    expect(parseQuestion('strong wind left to right', BAG)).toEqual({ kind: 'wind', dirs: ['left-to-right'], strength: 'strong' })
+    expect(parseQuestion('wind behind me, light', BAG)).toEqual({ kind: 'wind', dirs: ['helping'], strength: 'light' })
+    expect(parseQuestion('the wind has dropped', BAG)).toEqual({ kind: 'wind', dirs: [], strength: 'calm' })
+    expect(parseQuestion('8 hard', BAG).kind).toBe('compare')
+  })
+  it('telling it the wind sets the buttons and gives the club for it', () => {
+    const calm = say('what club', ctxFor(147))
+    const r = answer(parseQuestion('into the wind, strong', BAG), ctxFor(147))
+    expect(r.wind).toEqual({ dirs: ['into'], strength: 'strong' })
+    expect(r.text).toMatch(/^Got it: wind into, strong\. (4 Hybrid|4 Iron|5 Iron|4 Wood)\./)
+    expect(r.text.split('.')[1]).not.toBe(calm.split('.')[0])
+  })
+})

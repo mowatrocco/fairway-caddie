@@ -1,4 +1,5 @@
 import { adjustModel, lieNotes, PLAIN_LIE, type Lie, type Swing } from './lie'
+import { windModel, windNote, windPlaysFactor, type ShotWind } from './wind'
 import type { Club } from '../../types'
 import type { CourseFeature, FeatureKind } from '../../types/courseMap'
 import type { TrustLevel } from '../../types/course'
@@ -53,6 +54,8 @@ export interface CaddieInput {
   swing?: Swing
   /** Ground height in metres at a point, or null where unknown. Without it the ground is treated as flat. */
   heightAt?: (p: LngLat) => number | null
+  /** Wind on this shot, from your wind buttons. None if not given. */
+  wind?: ShotWind | null
 }
 
 export interface ShotPlan {
@@ -215,7 +218,7 @@ export function recommend(input: CaddieInput): CaddieResult {
   const usable = input.clubs
     .flatMap((c) => [modelClub(c), ...partialModels(c)])
     .filter((m): m is ClubModel => m !== null)
-    .map((m) => adjustModel(m, lie, swing))
+    .map((m) => windModel(adjustModel(m, lie, swing), input.wind ?? null))
   if (usable.length === 0) {
     return { kind: 'none', reason: 'No clubs have a distance yet. Add them in My Bag and the caddie can advise.' }
   }
@@ -346,14 +349,21 @@ export function recommend(input: CaddieInput): CaddieResult {
 
   const hTarget = terrain ? terrain.ground(pinXY) : null
   const heightDiffM = terrain && hTarget !== null ? hTarget - terrain.h0 : null
-  const playsLikeM = heightDiffM !== null ? targetM + heightDiffM * PLAYS_LIKE_PER_M : null
+  const windK = windPlaysFactor(input.wind ?? null)
+  const playsLikeM = heightDiffM !== null || windK !== 1 ? (targetM + (heightDiffM ?? 0) * PLAYS_LIKE_PER_M) * windK : null
   const heightReason =
     heightDiffM !== null && Math.abs(heightDiffM) >= 2
       ? [
-          `The ${pinWord} is ${Math.round(Math.abs(heightDiffM))} m ${heightDiffM > 0 ? 'above' : 'below'} you, so it plays about ${Math.round(playsLikeM!)} m.`,
+          `The ${pinWord} is ${Math.round(Math.abs(heightDiffM))} m ${heightDiffM > 0 ? 'above' : 'below'} you, so it plays about ${Math.round(targetM + heightDiffM * PLAYS_LIKE_PER_M)} m${windK !== 1 ? ' before the wind' : ''}.`,
         ]
       : []
-  const reasons = [...explain(best, naive, bestStraight, targetM, pinWord, alt), ...heightReason, ...lieNotes(lie, swing)]
+  const windLine = windNote(input.wind ?? null, best.m.carryM)
+  const reasons = [
+    ...explain(best, naive, bestStraight, targetM, pinWord, alt),
+    ...heightReason,
+    ...(windLine ? [windLine] : []),
+    ...lieNotes(lie, swing),
+  ]
   const confidence = rateConfidence(input, best.m)
   const notes: string[] = []
   if (driverLeftOut) notes.push("Driver is left out because you're not on the tee.")
@@ -363,10 +373,15 @@ export function recommend(input: CaddieInput): CaddieResult {
     )
   if (!best.m.spreadKnown) notes.push(`Using a standard left/right spread for ${best.m.club.name}. Add your own in My Bag for sharper advice.`)
   if (!best.m.rollKnown) notes.push(`No total distance for ${best.m.club.name}, so its roll is estimated.`)
+  const windSet = Boolean(input.wind && input.wind.kmh > 0)
   notes.push(
-    terrain
-      ? "Wind isn't included yet. Slope is, from LINZ ground heights."
-      : "Wind and slope aren't included here: no ground heights for this spot yet.",
+    terrain && windSet
+      ? 'Wind and slope are both included: wind from your buttons, slope from LINZ ground heights.'
+      : terrain
+        ? "Wind isn't set: tap the wind buttons if it's blowing. Slope is included, from LINZ ground heights."
+        : windSet
+          ? "Wind is from your buttons. Slope isn't included here: no ground heights for this spot yet."
+          : "Wind and slope aren't included here: no wind set, and no ground heights for this spot yet.",
   )
 
   return {

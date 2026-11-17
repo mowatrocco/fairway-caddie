@@ -39,7 +39,7 @@ A personal GPS caddie for South Head Golf Club, built as an iPhone web app (PWA)
 - All distances are stored in metres. Yards are only for display.
 - Carry and total are separate fields and are never swapped. A distance whose type isn't confirmed is kept as "rough" and marked ≈.
 - The caddie never shows advice it can't back with real data.
-- Club advice is worked out by fixed TypeScript rules, not AI: the same inputs always give the same answer. A distance not yet marked carry or total is used as carry and the advice says so. Wind isn't included yet; slope comes from LINZ ground heights when they've loaded, and the card says when they haven't.
+- Club advice is worked out by fixed TypeScript rules, not AI: the same inputs always give the same answer. A distance not yet marked carry or total is used as carry and the advice says so. Wind comes from your wind buttons (rules of thumb for carry, drift and roll); slope comes from LINZ ground heights when they've loaded. The card says which are included.
 - Everything stays on the phone. The only things fetched are LINZ map photos, which are kept on the phone (Cache Storage) so the map works with no signal.
 - GPS runs only while the Caddie or course-map screen is open and the app is on screen. Distances are never shown as plain numbers when GPS is worse than ±10 m or more than 20 s old.
 - The LINZ map key is stored on the phone only, never in the code or in backups.
@@ -59,3 +59,4 @@ A personal GPS caddie for South Head Golf Club, built as an iPhone web app (PWA)
   - Slope from LINZ ground heights: plays-like distance, roll on slopes, and pre-filled slope buttons. Saved for offline with the photos.
   - Wedge chart (part swings) in My Bag.
   - Caddie chat (no AI, works offline): what club, why not a club, a club swung hard, safe miss, what it takes to carry a hazard, lay up or go (two-shot simulation), and telling it your lie.
+- **Wind (Nov 2026):** wind buttons (into, helping, left to right, right to left; calm to strong). You set them once for the shot you're on; the app keeps the compass direction, so the wind follows you round every hole. Expires after 4 hours. The chat understands "into the wind" and similar.

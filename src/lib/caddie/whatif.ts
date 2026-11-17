@@ -19,6 +19,7 @@ import {
   type Terrain,
 } from './engine'
 import { adjustModel, PLAIN_LIE, type Swing } from './lie'
+import { windModel } from './wind'
 import { STRATEGY_WEIGHTS, strokesFromOffGreen, strokesFromOnGreen } from './scoring'
 
 // "What if" questions for the caddie chat. Every number comes from the same
@@ -30,7 +31,7 @@ export function modelsFor(input: CaddieInput, swing: Swing = input.swing ?? 'nor
   return input.clubs
     .flatMap((c) => [modelClub(c), ...partialModels(c)])
     .filter((m): m is ClubModel => m !== null)
-    .map((m) => adjustModel(m, lie, swing))
+    .map((m) => windModel(adjustModel(m, lie, swing), input.wind ?? null))
     .filter((m) => input.fromTee || m.club.category !== 'driver')
 }
 

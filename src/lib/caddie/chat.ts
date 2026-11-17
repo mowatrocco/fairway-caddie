@@ -4,6 +4,8 @@ import { formatDistance, unitLabel } from '../calculations/units'
 import { pct, recommend, type CaddieInput, type CaddieResult } from './engine'
 import { HARD_SWING, OPPOSITE, PLAIN_LIE, SLOPE_LABEL, SURFACE_LABEL, type Lie, type Slope, type Surface, type Swing } from './lie'
 import { STRATEGY_LABEL } from './scoring'
+import { bearingDeg } from '../geo/geodesic'
+import { windFromTaps, windOnShot, WIND_STRENGTH_LABEL, type WindDir, type WindSetting, type WindStrength } from './wind'
 import { carryNeeds, compareLayup, missCosts, tryClub } from './whatif'
 
 // The caddie chat. No AI: questions are recognised by their key words, and every
@@ -17,6 +19,7 @@ export type Intent =
   | { kind: 'carry'; hazard: 'water' | 'bunker' | 'trouble' | 'any' }
   | { kind: 'layup' }
   | { kind: 'lie'; surface: Surface | null; slopes: Slope[] }
+  | { kind: 'wind'; dirs: WindDir[]; strength: WindStrength | null }
   | { kind: 'round' }
   | { kind: 'help' }
   | { kind: 'unknown' }
@@ -95,6 +98,23 @@ export function parseQuestion(text: string, clubs: Club[]): Intent {
     return { kind: 'carry', hazard }
   }
 
+  if (has(/wind|breeze|blowing|gust/)) {
+    const dirs: WindDir[] = []
+    if (has(/\binto|against|in my face|head ?wind|hurting/)) dirs.push('into')
+    else if (has(/helping|behind|down ?wind|tail ?wind|with me|at my back/)) dirs.push('helping')
+    if (has(/left to right|l to r|from the left/)) dirs.push('left-to-right')
+    else if (has(/right to left|r to l|from the right/)) dirs.push('right-to-left')
+    const strength: WindStrength | null = has(/calm|no wind|still|dropped|gone/)
+      ? 'calm'
+      : has(/light|slight|bit of|little/)
+        ? 'light'
+        : has(/strong|big|howling|heaps|really windy|pumping|blowing hard/)
+          ? 'strong'
+          : has(/medium|moderate|decent|fair/)
+            ? 'medium'
+            : null
+    if (dirs.length > 0 || strength) return { kind: 'wind', dirs, strength }
+  }
   const club = findClub(text, clubs)
   const hard = has(/\bhard|smash|full send|go at it|swing out|rip it|extra/)
   if (hard && club) return { kind: 'compare', club, swing: 'hard' }
@@ -133,6 +153,8 @@ export interface ChatReply {
   text: string
   /** For "I'm in the rough" and the like: the lie to set on the buttons. */
   lie?: Lie
+  /** For "into the wind" and the like: the wind to set on the buttons. */
+  wind?: { dirs: WindDir[]; strength: WindStrength | null }
 }
 
 const HELP =
@@ -187,6 +209,27 @@ function answerLong(intent: Intent, ctx: ChatContext): ChatReply {
 
     case 'what-club':
       return { text: describeResult(result, d) }
+
+    case 'wind': {
+      if (!input.position) return { text: needPosition }
+      const bearing = bearingDeg(input.position, input.greenMiddle)
+      const strength: WindStrength = intent.strength ?? (input.wind && input.wind.kmh > 0 ? input.wind.strength : 'medium')
+      if (strength === 'calm') {
+        const r = recommend({ ...input, wind: null })
+        return { text: `Got it: no wind. ${describeResult(r, d)}`, wind: { dirs: [], strength: 'calm' } }
+      }
+      let setting: WindSetting | null = null
+      if (intent.dirs.length > 0) setting = { fromDeg: windFromTaps(intent.dirs, bearing), strength, setAt: 0 }
+      else if (input.wind && input.wind.kmh > 0) {
+        // Only the strength was given: keep the direction already set.
+        const fromDeg = (bearing + (Math.atan2(-input.wind.cross, input.wind.head) * 180) / Math.PI + 360) % 360
+        setting = { fromDeg, strength, setAt: 0 }
+      }
+      if (!setting) return { text: `Which way is it blowing on this shot? Try "into, ${WIND_STRENGTH_LABEL[strength].toLowerCase()}" or "left to right".`, wind: { dirs: [], strength } }
+      const r = recommend({ ...input, wind: windOnShot(setting, bearing) })
+      const said = [...intent.dirs.map((x) => x.replace(/-/g, ' ')), WIND_STRENGTH_LABEL[strength].toLowerCase()].join(', ')
+      return { text: `Got it: wind ${said}. ${describeResult(r, d)}`, wind: { dirs: intent.dirs, strength } }
+    }
 
     case 'hard-which':
       return { text: 'Which club? Try something like "8 hard".' }

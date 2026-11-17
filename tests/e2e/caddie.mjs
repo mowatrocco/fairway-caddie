@@ -290,6 +290,29 @@ try {
   check((await chatAnswers()).length === 0, 'walking on to the next shot clears the chat')
   await goTo(P)
 
+  // 3b4. Wind buttons
+  const windOn = () => page.$$eval('[data-testid="wind"] .chip-on', (ns) => ns.map((n) => n.textContent))
+  check(JSON.stringify(await windOn()) === '["Calm"]', 'wind starts calm')
+  const calmClub = await page.$eval('[data-testid="advice"] .advice-club', (n) => n.textContent)
+  await clickText('[data-testid="wind"] button', 'Into')
+  await clickText('[data-testid="wind"] button', 'Strong')
+  await settle()
+  a = await advice()
+  const windClub = await page.$eval('[data-testid="advice"] .advice-club', (n) => n.textContent)
+  check(JSON.stringify(await windOn()) === '["Into","Strong"]', 'tapping Into and Strong sets the wind')
+  check(/plays \d+ m \(into the wind\)/.test(a) && /Wind \(into, strong\)/.test(a), 'the card says how it plays into the wind, and why')
+  check(windClub !== calmClub, `into a strong wind it takes a different club (${calmClub} → ${windClub})`)
+  await page.screenshot({ path: join(SHOTS, '32-caddie-wind-iphone15.png'), fullPage: true })
+  await page.reload({ waitUntil: 'networkidle0' })
+  await page.waitForSelector('[data-testid="wind"]', { timeout: 10000 })
+  await settle(800)
+  check(JSON.stringify(await windOn()) === '["Into","Strong"]', 'the wind is remembered after reopening the app')
+  await page.type('#chat-input', 'wind has dropped')
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => /^Got it: no wind/.test([...document.querySelectorAll('[data-testid="chat-answer"]')].pop()?.textContent ?? ''), { timeout: 10000 })
+  await settle()
+  check(JSON.stringify(await windOn()) === '["Calm"]', 'telling the chat "wind has dropped" sets it back to calm')
+
   // 3c. Driver only from the tee
   const mainClubNow = () => page.$eval('[data-testid="advice"] .advice-club', (n) => n.textContent)
   await clickText('.strategy button', 'Aggressive')
@@ -498,7 +521,7 @@ try {
   const playsLike = Number(/plays (\d+) m \((\d+) m up\)/.exec(sa)?.[1])
   check(playsLike >= 157 && playsLike <= 162, `green ~10 m above you: the card says it plays ${playsLike} m`)
   check(/middle is 1\d m above you, so it plays about 1\d\d m/.test(sa), 'and the reasons say how much higher the green is')
-  check(sa.includes('Slope is, from LINZ ground heights'), 'says slope is now included')
+  check(sa.includes('Slope is included, from LINZ ground heights'), 'says slope is now included')
   const slopeChips = await s.page.$$eval('[data-testid="lie"] .chip-on', (ns) => ns.map((n) => n.textContent))
   check(
     JSON.stringify(slopeChips) === '["Fairway","Ball above feet","Uphill"]' && Boolean(await s.page.$('[data-testid="lie-from-map"]')),

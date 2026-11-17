@@ -4,6 +4,7 @@ import { pct } from '../../lib/caddie/engine'
 import { STRATEGY_LABEL, type Strategy } from '../../lib/caddie/scoring'
 import { formatDistance, unitLabel } from '../../lib/calculations/units'
 import { OPPOSITE, SLOPE_LABEL, SURFACE_LABEL, type Lie, type Slope, type Surface } from '../../lib/caddie/lie'
+import { OPPOSITE_WIND, WIND_DIR_LABEL, WIND_KMH, WIND_STRENGTH_LABEL, type WindDir, type WindStrength } from '../../lib/caddie/wind'
 
 const CONF_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const
 
@@ -59,10 +60,7 @@ export function AdviceCard({ result, units }: { result: CaddieResult; units: Uni
         {result.pinSource === 'rangefinder'
           ? `Playing to your rangefinder: ${d(result.targetM)} to the flag`
           : `Playing to the green middle: ${d(result.targetM)}`}
-        {result.playsLikeM !== null &&
-          result.heightDiffM !== null &&
-          Math.abs(result.heightDiffM) >= 2 &&
-          `, plays ${d(result.playsLikeM)} (${Math.round(Math.abs(result.heightDiffM))} m ${result.heightDiffM > 0 ? 'up' : 'down'})`}
+        {result.playsLikeM !== null && Math.abs(result.playsLikeM - result.targetM) >= 2 && `, plays ${d(result.playsLikeM)}${playsWhy(result)}`}
       </p>
       <div className="advice-top">
         <p className="advice-club">{p.clubName}</p>
@@ -183,6 +181,55 @@ export function LiePicker({ lie, onChange }: { lie: Lie; onChange: (l: Lie) => v
         {(Object.keys(SLOPE_LABEL) as Slope[]).map((s) => (
           <button key={s} aria-pressed={lie.slopes.includes(s)} className={lie.slopes.includes(s) ? 'chip chip-on' : 'chip'} onClick={() => toggleSlope(s)}>
             {SLOPE_LABEL[s]}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** "(10 m up, into the wind)" */
+function playsWhy(r: Extract<CaddieResult, { kind: 'advice' }>): string {
+  const parts: string[] = []
+  if (r.heightDiffM !== null && Math.abs(r.heightDiffM) >= 2) parts.push(`${Math.round(Math.abs(r.heightDiffM))} m ${r.heightDiffM > 0 ? 'up' : 'down'}`)
+  const windOnly = (r.playsLikeM ?? 0) - r.targetM - (r.heightDiffM ?? 0)
+  if (Math.abs(windOnly) >= 2) parts.push(windOnly > 0 ? 'into the wind' : 'wind helping')
+  return parts.length ? ` (${parts.join(', ')})` : ''
+}
+
+/** Which way the wind blows on this shot, and how hard. */
+export function WindPicker({
+  dirs,
+  strength,
+  onDirs,
+  onStrength,
+}: {
+  dirs: WindDir[]
+  strength: WindStrength
+  onDirs: (d: WindDir[]) => void
+  onStrength: (s: WindStrength) => void
+}) {
+  const toggle = (d: WindDir) => onDirs(dirs.includes(d) ? dirs.filter((x) => x !== d) : [...dirs.filter((x) => x !== OPPOSITE_WIND[d]), d])
+  return (
+    <div className="lie" data-testid="wind">
+      <div className="lie-row" role="group" aria-label="Wind direction on this shot">
+        {(Object.keys(WIND_DIR_LABEL) as WindDir[]).map((d) => (
+          <button key={d} aria-pressed={dirs.includes(d)} className={dirs.includes(d) ? 'chip chip-on' : 'chip'} onClick={() => toggle(d)}>
+            {WIND_DIR_LABEL[d]}
+          </button>
+        ))}
+      </div>
+      <div className="lie-row" role="radiogroup" aria-label="Wind strength">
+        {(Object.keys(WIND_STRENGTH_LABEL) as WindStrength[]).map((s) => (
+          <button
+            key={s}
+            role="radio"
+            aria-checked={strength === s}
+            className={strength === s ? 'chip chip-on' : 'chip'}
+            onClick={() => onStrength(s)}
+            title={s === 'calm' ? 'No wind' : `About ${WIND_KMH[s]} km/h`}
+          >
+            {WIND_STRENGTH_LABEL[s]}
           </button>
         ))}
       </div>

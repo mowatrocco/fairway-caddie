@@ -141,7 +141,7 @@ describe('the engine with ground heights', () => {
     const none = advise(input())
     const flat = advise(input({ heightAt: () => 31 }))
     expect(flat.primary).toEqual(none.primary)
-    expect(flat.notes.join(' ')).toMatch(/Slope is, from LINZ ground heights/)
+    expect(flat.notes.join(' ')).toMatch(/Slope is included, from LINZ ground heights/)
     expect(none.notes.join(' ')).toMatch(/no ground heights for this spot/)
   })
 

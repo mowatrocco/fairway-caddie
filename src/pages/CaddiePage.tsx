@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import type { AppData } from '../types'
 import type { LngLat } from '../lib/geo/geodesic'
-import { distanceM } from '../lib/geo/geodesic'
+import { bearingDeg, distanceM } from '../lib/geo/geodesic'
 import { greenDistances, type GreenDistances } from '../lib/geo/green'
 import { analyseGaps } from '../lib/calculations/gaps'
 import { formatDistance, fromDisplay, toDisplay, unitLabel } from '../lib/calculations/units'
@@ -11,7 +11,19 @@ import { isHazard } from '../lib/course/autoHoles'
 import { recommend, type CaddieInput, type CaddieResult } from '../lib/caddie/engine'
 import { CaddieChat } from '../components/caddie/CaddieChat'
 import type { Strategy } from '../lib/caddie/scoring'
-import { AdviceCard, LiePicker, StrategyPicker, StrategyTable } from '../components/caddie/AdviceCard'
+import { AdviceCard, LiePicker, StrategyPicker, StrategyTable, WindPicker } from '../components/caddie/AdviceCard'
+import {
+  parseWindSetting,
+  WIND_KMH,
+  windDirsOnShot,
+  windFromTaps,
+  windIsCurrent,
+  windOnShot,
+  type ShotWind,
+  type WindDir,
+  type WindSetting,
+  type WindStrength,
+} from '../lib/caddie/wind'
 import { isPlain, PLAIN_LIE, type Lie } from '../lib/caddie/lie'
 import { useTerrain } from '../lib/terrain/useTerrain'
 import { suggestSlopes, type HeightAt } from '../lib/terrain/terrain'
@@ -41,6 +53,8 @@ const COURSE = southHead
 const WRONG_HOLE_M = 700
 /** Walk further than this from where you took a rangefinder reading and it stops being used. */
 const RF_MOVE_M = 15
+/** For stamping settings when you tap (not during render). */
+const clockNow = () => Date.now()
 /** Within this of one of the hole's tee markers counts as being on the tee. */
 const ON_TEE_M = 25
 
@@ -72,10 +86,17 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
   const [strategy, setStrategyState] = useState<Strategy>('normal')
   // The lie belongs to one shot: it resets when you change hole or walk on.
   const [lieAt, setLieAt] = useState<{ lie: Lie; hole: number; at: LngLat | null } | null>(null)
+  // Wind is set once and kept as a compass direction, so it follows you round the course.
+  const [windSet, setWindState] = useState<WindSetting | null>(null)
+  const saveWind = (w: WindSetting) => {
+    setWindState(w)
+    setDeviceSetting('wind', JSON.stringify(w))
+  }
 
   useEffect(() => {
     getDeviceSetting('gpsOn').then((v) => setGpsOn(v === 'yes'), () => setGpsOn(false))
     getDeviceSetting('keepAwake').then((v) => setKeepAwake(v === 'yes'), () => {})
+    getDeviceSetting('wind').then((v) => setWindState(parseWindSetting(v)), () => {})
     getDeviceSetting('strategy').then(
       (v) => {
         if (v === 'safe' || v === 'normal' || v === 'aggressive') setStrategyState(v)
@@ -143,6 +164,23 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
 
   const report = checkHole(features, hole, COURSE)
 
+  const shotBearing = position && middle && !farAway ? bearingDeg(position, middle) : null
+  const windNow = windIsCurrent(windSet, gps.now) ? windSet : null
+  const shotWind: ShotWind | null = windNow && shotBearing !== null ? windOnShot(windNow, shotBearing) : null
+  const windDirs = shotWind ? windDirsOnShot(shotWind) : []
+  const windStrength: WindStrength = windNow?.strength ?? 'calm'
+  const setWindDirs = (dirs: WindDir[]) => {
+    if (shotBearing === null) return
+    const fromDeg = windFromTaps(dirs, shotBearing)
+    saveWind({ fromDeg, strength: fromDeg === null ? windStrength : windStrength === 'calm' ? 'medium' : windStrength, setAt: clockNow() })
+  }
+  const applyWind = ({ dirs, strength }: { dirs: WindDir[]; strength: WindStrength | null }) => {
+    const s = strength ?? (windStrength === 'calm' ? 'medium' : windStrength)
+    if (dirs.length > 0 && shotBearing !== null) saveWind({ fromDeg: windFromTaps(dirs, shotBearing), strength: s, setAt: clockNow() })
+    else saveWind({ fromDeg: s === 'calm' ? null : (windNow?.fromDeg ?? null), strength: s, setAt: clockNow() })
+  }
+  const setWindStrength = (s: WindStrength) => saveWind({ fromDeg: windNow?.fromDeg ?? null, strength: s, setAt: clockNow() })
+
   const lieSet = lieAt && lieAt.hole === hole && !(lieAt.at && position && distanceM(lieAt.at, position) > RF_MOVE_M)
   // Until you touch the buttons for this shot, the slope ones come from the ground heights.
   const mapSlopes = !lieSet && terrain.heightAt && position && middle && !farAway ? suggestSlopes(terrain.heightAt, position, middle) : []
@@ -175,6 +213,7 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
           fromTee,
           lie: fromTee ? PLAIN_LIE : lie,
           heightAt: terrain.heightAt,
+          wind: shotWind,
           terrainVersion: terrain.version,
           clubs: data.bag,
           strategy,
@@ -203,6 +242,22 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
           )}
         </div>
       )
+    ) : null
+  const windBlock =
+    adviceInput && position && !farAway && !onGreen ? (
+      <div className="lie-wrap">
+        <div className="lie-head">
+          <h2 className="section-title">Wind</h2>
+        </div>
+        <WindPicker dirs={windDirs} strength={windStrength} onDirs={setWindDirs} onStrength={setWindStrength} />
+        <p className="field-hint" data-testid="wind-hint">
+          {windNow && windNow.fromDeg !== null && windStrength !== 'calm'
+            ? `About ${WIND_KMH[windStrength]} km/h. Set once: it follows you round, showing which way it blows on each shot. Change it whenever it shifts.`
+            : windStrength !== 'calm'
+              ? 'Now tap which way it blows on this shot.'
+              : 'Tap which way it blows on this shot, and how hard. Set it once and it follows you round.'}
+        </p>
+      </div>
     ) : null
   const rangefinderBlock = ring && (
     <div className="rf-block">
@@ -333,9 +388,10 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
             </p>
           )}
           {lieBlock}
+          {windBlock}
           {!onGreen && rangefinderBlock}
           {adviceInput && (position || rf !== null) && (
-            <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} chat onSetLie={setLie} />
+            <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} chat onSetLie={setLie} onSetWind={applyWind} />
           )}
         </>
       ) : (
@@ -385,6 +441,7 @@ export function CaddiePage({ data, goToBag, openMap }: Props) {
           )}
           {dists && !farAway && !onGreen && <GreenNumbers d={dists} units={units} roughM={roughM} compact />}
           {lieBlock}
+          {windBlock}
           {!onGreen && !farAway && rangefinderBlock}
           {adviceInput && position && !farAway && (
             <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} onPlan={setPlan} table />
@@ -522,6 +579,7 @@ interface AdviceInput {
   lie: Lie
   heightAt: HeightAt | null
   terrainVersion: number
+  wind: ShotWind | null
   clubs: Club[]
   strategy: Strategy
 }
@@ -536,6 +594,7 @@ function Advice({
   table,
   chat,
   onSetLie,
+  onSetWind,
 }: {
   input: AdviceInput
   units: AppData['profile']['units']
@@ -545,8 +604,10 @@ function Advice({
   table?: boolean
   chat?: boolean
   onSetLie?: (l: Lie) => void
+  onSetWind?: (w: { dirs: WindDir[]; strength: WindStrength | null }) => void
 }) {
-  const { features, hole, green, middle, greenTrust, position, source, accuracyM, stale, rf, fromTee, lie, heightAt, terrainVersion, clubs, strategy } = input
+  const { features, hole, green, middle, greenTrust, position, source, accuracyM, stale, rf, fromTee, lie, heightAt, terrainVersion, wind, clubs, strategy } = input
+  const windKey = wind ? `${wind.head.toFixed(2)}|${wind.cross.toFixed(2)}|${wind.kmh}` : ''
   const lieKey = `${lie.surface}|${[...lie.slopes].sort().join(',')}`
   // GPS readings jiggle by a metre or so every second; round to about 2 m so the advice only reworks on real moves.
   const lng = position ? Math.round(position[0] * 5e4) / 5e4 : null
@@ -564,6 +625,7 @@ function Advice({
         fromTee,
         lie,
         heightAt: heightAt ?? undefined,
+        wind,
         corners: lineOf(findLineOfPlay(features, hole))?.slice(1, -1) ?? [],
         hazards: features.filter(isHazard),
         greenTrust,
@@ -572,7 +634,7 @@ function Advice({
       }),
     // green and middle come from features and hole
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [features, hole, lng, lat, source, acc, stale, rf, fromTee, lieKey, heightAt, terrainVersion, clubs, strategy, greenTrust],
+    [features, hole, lng, lat, source, acc, stale, rf, fromTee, lieKey, heightAt, terrainVersion, windKey, clubs, strategy, greenTrust],
   )
   const result: CaddieResult = useMemo(() => recommend(engineInput), [engineInput])
   useEffect(() => {
@@ -604,6 +666,7 @@ function Advice({
           hole={hole}
           position={position}
           onSetLie={onSetLie}
+          onSetWind={onSetWind}
         />
       )}
     </div>
