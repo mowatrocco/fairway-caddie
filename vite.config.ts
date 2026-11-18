@@ -35,6 +35,11 @@ export default defineConfig({
       },
     }),
   ],
+  // Shown in Settings, so you can tell which version the phone is running.
+  define: {
+    __APP_VERSION__: JSON.stringify(process.env.GITHUB_SHA?.slice(0, 7) ?? 'local'),
+    __BUILT_AT__: JSON.stringify(new Date().toISOString()),
+  },
   // The map engine (MapLibre) is ~1 MB; it loads only when the map is opened and is cached for offline use.
   build: { chunkSizeWarningLimit: 1200 },
   test: {

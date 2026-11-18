@@ -84,6 +84,10 @@ export function SettingsSheet({ data, dispatch, onClose, lastSavedAt, persisted 
               ? 'Not yet. Add the app to your Home Screen and keep backups.'
               : 'Unknown on this browser. Keep backups.'}
         </dd>
+        <dt>App version</dt>
+        <dd data-testid="app-version">
+          {__APP_VERSION__}, built {when(__BUILT_AT__)}
+        </dd>
       </dl>
 
       <div className="btn-row">
