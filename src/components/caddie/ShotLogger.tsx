@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { Drawer } from '../Drawer'
 import type { Club, Units } from '../../types'
 import type { Round, Shot, ShotSpot } from '../../types/round'
 import type { Action } from '../../state/reducer'
 import { formatDistance, unitLabel } from '../../lib/calculations/units'
 import { openShot, shotDistance, shotsOnHole } from '../../lib/rounds/shots'
 import { newId } from '../../lib/id'
+import { shortName } from '../../lib/caddie/chat'
 
 /** For stamping a shot when you tap (not during render). */
 const stamp = () => new Date().toISOString()
@@ -23,13 +25,15 @@ interface Props {
   /** You're close to the green (chipping range), where a shot might be holed or finish on the green. */
   nearGreen: boolean
   dispatch: (a: Action) => void
+  /** Open the scorecard on this hole. */
+  scoreHole: () => void
 }
 
 /**
  * One tap per shot: stand over the ball, tap the club. Where you're standing is where
  * the shot is hit from, and where the last shot on this hole finished.
  */
-export function ShotLogger({ round, hole, bag, units, spot, pickId, onGreen, nearGreen, dispatch }: Props) {
+export function ShotLogger({ round, hole, bag, units, spot, pickId, onGreen, nearGreen, dispatch, scoreHole }: Props) {
   const [choosing, setChoosing] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
   const u = unitLabel(units)
@@ -68,64 +72,85 @@ export function ShotLogger({ round, hole, bag, units, spot, pickId, onGreen, nea
     setFlash(`Removed shot ${shots.length}: ${last.clubName}.`)
   }
 
+  const canMark = Boolean(open && open.from && spot)
+
   return (
     <div className="shot-logger" data-testid="shot-logger">
-      <div className="shot-head">
-        <h2 className="section-title">Shots</h2>
-        {last && (
+      {shots.length > 0 && (
+        <div className="shot-head">
+          <ol className="shot-line" aria-label={`Shots logged on hole ${hole}`}>
+            {shots.map((s, i) => {
+              const d = shotDistance(s)
+              return (
+                <li key={s.id}>
+                  <span className="shot-no">{i + 1}</span>
+                  <span className="shot-club">{shortName({ name: s.clubName } as Club)}</span>
+                  <span className="shot-dist">
+                    {d ? `${d.rough ? '≈' : ''}${formatDistance(d.m, units)} ${u}` : s.result === 'penalty' ? 'penalty' : s.from ? '…' : 'no position'}
+                  </span>
+                </li>
+              )
+            })}
+          </ol>
           <button className="link-btn" onClick={undo}>
-            Undo last
+            Undo
           </button>
-        )}
-      </div>
-
-      {shots.length > 0 ? (
-        <ol className="shot-line" aria-label={`Shots logged on hole ${hole}`}>
-          {shots.map((s, i) => {
-            const d = shotDistance(s)
-            return (
-              <li key={s.id}>
-                <span className="shot-no">{i + 1}</span> {s.clubName}
-                <span className="shot-dist">
-                  {d ? `${d.rough ? '≈' : ''}${formatDistance(d.m, units)} ${u}` : s.result === 'penalty' ? 'penalty' : s.from ? '…' : 'no position'}
-                </span>
-              </li>
-            )
-          })}
-        </ol>
-      ) : (
-        <p className="field-hint">Standing over the ball? Tap the club you're hitting. Putts go on the scorecard.</p>
+        </div>
       )}
 
-      {open && open.from && spot && (onGreen || nearGreen) && (
-        <button className={onGreen ? 'btn btn-wide btn-primary' : 'link-btn'} onClick={markHere} data-testid="mark-finish">
-          {onGreen ? `On the green: mark where your ${open.clubName} finished` : `Holed it, or on the green? Mark where it finished`}
-        </button>
-      )}
-
-      {!onGreen && (
+      {onGreen ? (
         <div className="shot-buttons">
-          {pick && !choosing && (
-            <button className="btn btn-primary shot-pick" onClick={() => log(pick)} data-testid="log-pick">
-              Hitting {pick.name}
+          {canMark && (
+            <button className="btn btn-primary shot-pick" onClick={markHere} data-testid="mark-finish">
+              <span className="btn-text">Mark where it finished</span>
             </button>
           )}
-          <button className="btn" onClick={() => setChoosing((c) => !c)} aria-expanded={choosing}>
-            {choosing ? 'Close' : pick ? 'Other club' : 'Log a shot'}
+          <button className={canMark ? 'btn' : 'btn btn-primary shot-pick'} onClick={scoreHole}>
+            Score hole {hole}
           </button>
         </div>
-      )}
-      {choosing && (
-        <div className="chips shot-clubs" role="group" aria-label="Club for this shot">
-          {clubs.map((c) => (
-            <button key={c.id} type="button" className={c.id === pickId ? 'chip chip-on' : 'chip'} onClick={() => log(c)}>
-              {c.name}
+      ) : (
+        <>
+          <div className="shot-buttons">
+            {pick ? (
+              <button className="btn btn-primary shot-pick" onClick={() => log(pick)} data-testid="log-pick">
+                <span className="btn-text">Hitting {shortName(pick)}</span>
+              </button>
+            ) : (
+              <button className="btn btn-primary shot-pick" onClick={() => setChoosing(true)}>
+                Log a shot
+              </button>
+            )}
+            {pick && (
+              <button className="btn" onClick={() => setChoosing(true)}>
+                Other club
+              </button>
+            )}
+            <button className="btn" onClick={scoreHole} aria-label={`Score hole ${hole}`}>
+              Score
             </button>
-          ))}
-        </div>
+          </div>
+          {nearGreen && canMark && (
+            <button className="link-btn" onClick={markHere} data-testid="mark-finish">
+              Holed it, or on the green? Mark where it finished
+            </button>
+          )}
+        </>
       )}
 
-      {!spot && !onGreen && <p className="field-hint">No good GPS fix right now: shots still log, without a distance.</p>}
+      {choosing && (
+        <Drawer title="Club for this shot" onClose={() => setChoosing(false)} testId="club-drawer">
+          <div className="chips shot-clubs" role="group" aria-label="Club for this shot">
+            {clubs.map((c) => (
+              <button key={c.id} type="button" className={c.id === pickId ? 'chip chip-on' : 'chip'} onClick={() => log(c)}>
+                {c.name}
+              </button>
+            ))}
+          </div>
+          <p className="field-hint">Putts go on the scorecard, not here.</p>
+        </Drawer>
+      )}
+
       <p className="shot-flash" aria-live="polite" data-testid="shot-flash">
         {flash}
       </p>

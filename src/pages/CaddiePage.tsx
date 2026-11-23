@@ -11,10 +11,14 @@ import { isHazard } from '../lib/course/autoHoles'
 import { recommend, type CaddieInput, type CaddieResult } from '../lib/caddie/engine'
 import { CaddieChat } from '../components/caddie/CaddieChat'
 import type { Strategy } from '../lib/caddie/scoring'
-import { AdviceCard, LiePicker, StrategyPicker, StrategyTable, WindPicker } from '../components/caddie/AdviceCard'
+import { AdviceCard, AdviceSummary, LiePicker, StrategyPicker, StrategyTable, WindPicker } from '../components/caddie/AdviceCard'
+import { Drawer } from '../components/Drawer'
+import { Sheet } from '../components/Sheet'
 import {
   parseWindSetting,
+  WIND_DIR_LABEL,
   WIND_KMH,
+  WIND_STRENGTH_LABEL,
   windDirsOnShot,
   windFromTaps,
   windIsCurrent,
@@ -24,7 +28,7 @@ import {
   type WindSetting,
   type WindStrength,
 } from '../lib/caddie/wind'
-import { isPlain, PLAIN_LIE, type Lie } from '../lib/caddie/lie'
+import { isPlain, PLAIN_LIE, SLOPE_SHORT, SURFACE_LABEL, type Lie } from '../lib/caddie/lie'
 import { useTerrain } from '../lib/terrain/useTerrain'
 import { activeRound, formatToPar, roundTotals } from '../lib/rounds/score'
 import { suggestSlopes, type HeightAt } from '../lib/terrain/terrain'
@@ -126,6 +130,7 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole, dispatch }: Prop
   const [plan, setPlan] = useState<{ aim: LngLat; zone: LngLat[] } | null>(null)
   // The caddie's club for this shot, offered as the one-tap button for logging it.
   const [pickId, setPickId] = useState<string | null>(null)
+  const [drawer, setDrawer] = useState<'lie' | 'wind' | 'flag' | null>(null)
 
   // Ground heights around this shot (you and the green), for slope.
   const herePos: LngLat | null = manualPos ?? gps.fix?.point ?? null
@@ -141,6 +146,7 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole, dispatch }: Prop
     sessionStorage.setItem('caddieHole', String(n))
     setMeasure(null)
     setManualPos(null)
+    setDrawer(null)
   }
 
   // ---------- Where you are, and what's around ----------
@@ -149,7 +155,6 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole, dispatch }: Prop
   /** Set when GPS is too rough (or too old) to show plain numbers. */
   const roughM =
     manualPos || status.kind !== 'fix' ? null : status.stale || status.accuracyM > FAIR_M ? status.accuracyM : null
-  const fairPm = !manualPos && status.kind === 'fix' && !status.stale && status.grade === 'fair' ? status.accuracyM : null
   /** Where a logged shot is hit from: a spot set on the map, or a GPS fix that isn't out of date. */
   const shotSpot: ShotSpot | null = manualPos
     ? { point: manualPos, accuracyM: null }
@@ -240,77 +245,135 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole, dispatch }: Prop
         }
       : null
 
-  const lieBlock =
-    adviceInput && position && !farAway && !onGreen ? (
-      fromTee ? (
-        <p className="field-hint lie-tee">Teeing off: lie buttons appear for your next shot.</p>
-      ) : (
-        <div className="lie-wrap">
-          <div className="lie-head">
-            <h2 className="section-title">Your lie</h2>
-            {!isPlain(lie) && (
-              <button className="link-btn" onClick={() => setLie(PLAIN_LIE)}>
-                Reset
-              </button>
-            )}
-          </div>
-          <LiePicker lie={lie} onChange={setLie} />
-          {!lieSet && mapSlopes.length > 0 && (
-            <p className="field-hint" data-testid="lie-from-map">
-              Slope set from the ground heights. GPS is a few metres out, so check it and tap to change.
-            </p>
-          )}
-        </div>
-      )
-    ) : null
-  const windBlock =
-    adviceInput && position && !farAway && !onGreen ? (
-      <div className="lie-wrap">
-        <div className="lie-head">
-          <h2 className="section-title">Wind</h2>
-        </div>
-        <WindPicker dirs={windDirs} strength={windStrength} onDirs={setWindDirs} onStrength={setWindStrength} />
-        <p className="field-hint" data-testid="wind-hint">
-          {windNow && windNow.fromDeg !== null && windStrength !== 'calm'
-            ? `About ${WIND_KMH[windStrength]} km/h. Set once: it follows you round, showing which way it blows on each shot. Change it whenever it shifts.`
-            : windStrength !== 'calm'
-              ? 'Now tap which way it blows on this shot.'
-              : 'Tap which way it blows on this shot, and how hard. Set it once and it follows you round.'}
-        </p>
-      </div>
-    ) : null
-  const rangefinderBlock = ring && (
-    <div className="rf-block">
-      <NumberField
-        label="Rangefinder to the flag"
-        name="rangefinder"
-        unit={u}
-        value={rf === null ? null : toDisplay(rf, units)}
-        onChange={(v) =>
-          setRangefinder((r) => ({ ...r, [hole]: v === null ? null : { m: fromDisplay(v, units), at: position } }))
-        }
-        hint={
-          rfOld
-            ? `Your last reading (${formatDistance(rfEntry!.m, units)} ${u}) was from ${formatDistance(rfMovedM, units)} ${u} back, so it's no longer used. Type a new one from here.`
-            : rf !== null
-              ? 'Club advice is playing to this reading.'
-              : 'Type in your rangefinder reading and the club advice plays to it instead of the green middle.'
-        }
-      />
-      {rfMismatch && (
-        <p className="msg msg-warn">
-          That doesn't fit between the front and back of the green from here. The GPS or this green's outline may be
-          off. Worth checking this hole in the course map.
-        </p>
-      )}
-    </div>
-  )
   const trustLine = ring && (
     <p className="field-hint trust-line">
       Green: {TRUST_LABEL[green!.trust]}
       {verifiedMiddle && ', middle checked by GPS'}. Hole {report.status === 'ready' ? 'fully mapped' : 'still being mapped'}.
     </p>
   )
+
+  // ---------- Lie, wind and flag: a button each, opening a short panel ----------
+
+  const canSetConditions = Boolean(adviceInput && position && !farAway && !onGreen)
+  const lieValue = fromTee
+    ? 'Tee'
+    : SURFACE_LABEL[lie.surface] + (lie.slopes.length ? `, ${lie.slopes.map((s) => SLOPE_SHORT[s]).join(', ')}` : '')
+  const windValue =
+    windNow && windStrength !== 'calm'
+      ? windDirs.length
+        ? `${windDirs.map((d) => WIND_DIR_LABEL[d]).join(' + ')}, ${WIND_STRENGTH_LABEL[windStrength].toLowerCase()}`
+        : WIND_STRENGTH_LABEL[windStrength]
+      : 'Calm'
+  const flagValue = rf !== null ? `${formatDistance(rf, units)} ${u}` : 'Rangefinder'
+
+  const conditions = (
+    <div className="conditions" data-testid="conditions">
+      <button className="cond" disabled={!canSetConditions || fromTee} onClick={() => setDrawer('lie')} aria-label={`Lie: ${lieValue}. Change`}>
+        <span className="cond-label">Lie{!lieSet && mapSlopes.length > 0 && ' (from map)'}</span>
+        <span className="cond-value">{lieValue}</span>
+      </button>
+      <button className="cond" disabled={!canSetConditions} onClick={() => setDrawer('wind')} aria-label={`Wind: ${windValue}. Change`}>
+        <span className="cond-label">Wind</span>
+        <span className="cond-value">{windValue}</span>
+      </button>
+      <button className={rfMismatch ? 'cond cond-warn' : 'cond'} disabled={!ring || onGreen} onClick={() => setDrawer('flag')} aria-label={`Flag: ${flagValue}. Change`}>
+        <span className="cond-label">Flag</span>
+        <span className={rf === null ? 'cond-value cond-empty' : 'cond-value'}>{flagValue}</span>
+      </button>
+    </div>
+  )
+
+  const drawers = (
+    <>
+      {drawer === 'lie' && (
+        <Drawer title="Your lie" onClose={() => setDrawer(null)} testId="lie-drawer">
+          <LiePicker lie={lie} onChange={setLie} />
+          {!lieSet && mapSlopes.length > 0 && (
+            <p className="field-hint" data-testid="lie-from-map">
+              Slope set from the ground heights. GPS is a few metres out, so check it and tap to change.
+            </p>
+          )}
+          {!isPlain(lie) && (
+            <button className="link-btn" onClick={() => setLie(PLAIN_LIE)}>
+              Back to flat fairway
+            </button>
+          )}
+        </Drawer>
+      )}
+      {drawer === 'wind' && (
+        <Drawer title="Wind" onClose={() => setDrawer(null)} testId="wind-drawer">
+          <WindPicker dirs={windDirs} strength={windStrength} onDirs={setWindDirs} onStrength={setWindStrength} />
+          <p className="field-hint" data-testid="wind-hint">
+            {windNow && windNow.fromDeg !== null && windStrength !== 'calm'
+              ? `About ${WIND_KMH[windStrength]} km/h. Set once: it follows you round, showing which way it blows on each shot.`
+              : windStrength !== 'calm'
+                ? 'Now tap which way it blows on this shot.'
+                : 'Tap which way it blows on this shot, and how hard. Set it once and it follows you round.'}
+          </p>
+        </Drawer>
+      )}
+      {drawer === 'flag' && ring && (
+        <Drawer title="Rangefinder" onClose={() => setDrawer(null)} testId="flag-drawer">
+          <NumberField
+            label="To the flag"
+            name="rangefinder"
+            unit={u}
+            value={rf === null ? null : toDisplay(rf, units)}
+            onChange={(v) => setRangefinder((r) => ({ ...r, [hole]: v === null ? null : { m: fromDisplay(v, units), at: position } }))}
+            hint={
+              rfOld
+                ? `Your last reading (${formatDistance(rfEntry!.m, units)} ${u}) was from ${formatDistance(rfMovedM, units)} ${u} back, so it's no longer used. Type a new one from here.`
+                : rf !== null
+                  ? 'Club advice is playing to this reading. It clears when you walk on.'
+                  : 'The club advice plays to this instead of the green middle.'
+            }
+          />
+          {rfMismatch && (
+            <p className="msg msg-warn">
+              That doesn't fit between the front and back of the green from here. The GPS or this green's outline may be off.
+              Worth checking this hole in the course map.
+            </p>
+          )}
+        </Drawer>
+      )}
+    </>
+  )
+
+  const shotsOn = Boolean(liveRound && ring && !farAway)
+  const actions = liveRound ? (
+    shotsOn ? (
+      <ShotLogger
+        key={hole}
+        round={liveRound}
+        hole={hole}
+        bag={data.bag}
+        units={units}
+        spot={shotSpot}
+        pickId={adviceInput ? pickId : null}
+        onGreen={onGreen}
+        nearGreen={dists !== null && dists.middleM <= NEAR_GREEN_M}
+        dispatch={dispatch}
+        scoreHole={() => scoreHole(hole)}
+      />
+    ) : (
+      <div className="shot-buttons">
+        <button className="btn btn-wide-flat" onClick={() => scoreHole(hole)}>
+          Score hole {hole}
+        </button>
+      </div>
+    )
+  ) : (
+    <button className="link-btn start-round" onClick={() => scoreHole(hole)}>
+      Start a round to log shots and keep score
+    </button>
+  )
+
+  const roundLine = liveRound
+    ? (() => {
+        const t = roundTotals(liveRound, COURSE.tees.find((x) => x.id === liveRound.teeId) ?? COURSE.tees[0])
+        return t.played === 0 ? ' · Round started' : ` · Round ${formatToPar(t.toPar)} thru ${t.played}`
+      })()
+    : ''
 
   return (
     <section className="page caddie" aria-labelledby="caddie-title">
@@ -320,8 +383,9 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole, dispatch }: Prop
         </button>
         <div className="caddie-hole">
           <h1 id="caddie-title">Hole {hole}</h1>
-          <p className="quiet">
+          <p className="quiet" data-testid="hole-line">
             Par {card.par}, {formatDistance(card.metres, units)} {u} {usual.name}
+            {roundLine}
           </p>
         </div>
         <button className="icon-btn" aria-label="Next hole" onClick={() => setHole(hole + 1)}>
@@ -340,35 +404,6 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole, dispatch }: Prop
           </button>
         </div>
       </div>
-
-      {liveRound && (
-        <div className="round-bar" data-testid="round-bar">
-          <span>
-            Round:{' '}
-            {(() => {
-              const t = roundTotals(liveRound, COURSE.tees.find((x) => x.id === liveRound.teeId) ?? COURSE.tees[0])
-              return t.played === 0 ? 'no holes scored yet' : `${formatToPar(t.toPar)} through ${t.played}`
-            })()}
-          </span>
-          <button className="btn btn-small" onClick={() => scoreHole(hole)}>
-            Score hole {hole}
-          </button>
-        </div>
-      )}
-      {liveRound && ring && !farAway && (
-        <ShotLogger
-          key={hole}
-          round={liveRound}
-          hole={hole}
-          bag={data.bag}
-          units={units}
-          spot={shotSpot}
-          pickId={adviceInput ? pickId : null}
-          onGreen={onGreen}
-          nearGreen={dists !== null && dists.middleM <= NEAR_GREEN_M}
-          dispatch={dispatch}
-        />
-      )}
 
       {gpsOn === false && (
         <div className="callout">
@@ -426,22 +461,15 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole, dispatch }: Prop
             <GreenNumbers d={dists!} units={units} roughM={roughM} />
           )}
           {roughM && position && (
-            <p className="msg msg-warn">
-              GPS is rough here (±{formatDistance(roughM, units)} {u}). Check with your rangefinder, or set your spot on the
-              Map view.
+            <p className="msg msg-warn msg-tight">
+              GPS is rough here (±{formatDistance(roughM, units)} {u}). Check with your rangefinder, or set your spot on the Map view.
             </p>
           )}
-          {fairPm && (
-            <p className="field-hint">
-              GPS is fair: distances could be out by up to {formatDistance(fairPm, units)} {u}.
-            </p>
-          )}
-          {lieBlock}
-          {windBlock}
-          {!onGreen && rangefinderBlock}
           {adviceInput && (position || rf !== null) && (
             <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} chat onSetLie={setLie} onSetWind={applyWind} onPick={setPickId} />
           )}
+          {!onGreen && conditions}
+          {actions}
         </>
       ) : (
         <>
@@ -489,25 +517,20 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole, dispatch }: Prop
             <p className="field-hint">Tap the map to measure to any spot.</p>
           )}
           {dists && !farAway && !onGreen && <GreenNumbers d={dists} units={units} roughM={roughM} compact />}
-          {lieBlock}
-          {windBlock}
-          {!onGreen && !farAway && rangefinderBlock}
           {adviceInput && position && !farAway && (
             <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} onPlan={setPlan} onPick={setPickId} table />
           )}
+          {!onGreen && !farAway && conditions}
+          {actions}
         </>
       )}
 
-      {ring && position && !farAway && (
-        <>
-          <h2 className="section-title">Hazards</h2>
-          <HazardList hazards={hazards} boundaries={boundaries} units={units} />
-        </>
-      )}
+      {ring && position && !farAway && <HazardList hazards={hazards} boundaries={boundaries} units={units} compact />}
 
-      {trustLine}
+      {drawers}
 
       <div className="caddie-foot">
+        {trustLine}
         {wake.supported ? (
           <label className="toggle">
             <input
@@ -699,31 +722,39 @@ function Advice({
   }, [pickId, onPick])
   useEffect(() => () => onPick?.(null), [onPick])
 
+  const [open, setOpen] = useState(false)
   const noDistances = result.kind === 'none' && !clubs.some((c) => c.category !== 'putter' && (c.carryM ?? c.roughM) !== null)
   return (
     <div className="advice-wrap">
-      <div className="advice-head">
-        <h2 className="section-title">Club advice</h2>
-        {result.kind === 'advice' && <StrategyPicker value={strategy} onChange={onStrategy} />}
-      </div>
-      <AdviceCard result={result} units={units} />
+      <AdviceSummary result={result} units={units} onOpen={() => setOpen(true)} />
       {noDistances && (
         <button className="btn btn-wide" onClick={goToBag}>
           Add club distances
         </button>
       )}
       {table && <StrategyTable result={result} units={units} />}
-      {chat && (
-        <CaddieChat
-          input={engineInput}
-          result={result}
-          features={features}
-          units={units}
-          hole={hole}
-          position={position}
-          onSetLie={onSetLie}
-          onSetWind={onSetWind}
-        />
+      {open && (
+        <Sheet title="The call" onClose={() => setOpen(false)}>
+          {result.kind === 'advice' && (
+            <div className="advice-head">
+              <span className="field-label">How to play it</span>
+              <StrategyPicker value={strategy} onChange={onStrategy} />
+            </div>
+          )}
+          <AdviceCard result={result} units={units} />
+          {chat && (
+            <CaddieChat
+              input={engineInput}
+              result={result}
+              features={features}
+              units={units}
+              hole={hole}
+              position={position}
+              onSetLie={onSetLie}
+              onSetWind={onSetWind}
+            />
+          )}
+        </Sheet>
       )}
     </div>
   )

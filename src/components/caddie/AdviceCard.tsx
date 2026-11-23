@@ -20,6 +20,73 @@ export function StrategyPicker({ value, onChange }: { value: Strategy; onChange:
   )
 }
 
+/**
+ * The call at a glance, for the Caddie screen: club, aim, odds. The whole card is a
+ * button that opens the full reasons.
+ */
+export function AdviceSummary({ result, units, onOpen }: { result: CaddieResult; units: Units; onOpen: () => void }) {
+  const u = unitLabel(units)
+  const d = (m: number) => `${formatDistance(m, units)} ${u}`
+  const why = <span className="sum-why">Why ›</span>
+
+  if (result.kind === 'none') {
+    return (
+      <div className="advice-sum advice-sum-quiet" data-testid="advice">
+        <p>{result.reason}</p>
+      </div>
+    )
+  }
+  if (result.kind === 'part-swing') {
+    return (
+      <button className="advice-sum advice-sum-quiet" data-testid="advice" onClick={onOpen}>
+        <span className="sum-top">
+          <span className="advice-club">Part swing</span>
+          {why}
+        </span>
+        <span className="sum-line">
+          {d(result.targetM)}: inside your {result.shortestClub} ({d(result.shortestCarryM)})
+        </span>
+      </button>
+    )
+  }
+  if (result.kind === 'distance-only') {
+    return (
+      <button className="advice-sum" data-testid="advice" onClick={onOpen}>
+        <span className="sum-top">
+          <span className="advice-club">{result.clubName}</span>
+          <span className="advice-conf conf-low">Low</span>
+        </span>
+        <span className="sum-line">
+          Carries ~{d(result.carryM)} to your rangefinder {d(result.targetM)}. No position, so no aim.
+        </span>
+        <span className="sum-odds">{why}</span>
+      </button>
+    )
+  }
+
+  const p = result.primary
+  const plays = result.playsLikeM !== null && Math.abs(result.playsLikeM - result.targetM) >= 2 ? ` · plays ${d(result.playsLikeM)}${playsWhy(result)}` : ''
+  return (
+    <button className="advice-sum" data-testid="advice" onClick={onOpen}>
+      <span className="sum-top">
+        <span className="advice-club">{p.clubName}</span>
+        <span className={`advice-conf conf-${result.confidence.level}`}>{CONF_LABEL[result.confidence.level]}</span>
+      </span>
+      <span className="sum-aim">
+        {p.aimText}
+        {plays}
+      </span>
+      <span className="sum-odds">
+        <span>
+          {p.layup ? `Leaves ~${d(p.leaveM)}` : `Green ${pct(p.pGreen)}`} · penalty {pct(p.pPenalty)}
+          {p.pBunker >= 0.03 && ` · bunker ${pct(p.pBunker)}`} · {STRATEGY_LABEL[result.strategy]}
+        </span>
+        {why}
+      </span>
+    </button>
+  )
+}
+
 /** The caddie's call: club, aim, why, and how sure it is. */
 export function AdviceCard({ result, units }: { result: CaddieResult; units: Units }) {
   const u = unitLabel(units)
@@ -27,14 +94,14 @@ export function AdviceCard({ result, units }: { result: CaddieResult; units: Uni
 
   if (result.kind === 'none') {
     return (
-      <div className="advice advice-quiet" data-testid="advice">
+      <div className="advice advice-quiet" data-testid="advice-full">
         <p>{result.reason}</p>
       </div>
     )
   }
   if (result.kind === 'part-swing') {
     return (
-      <div className="advice advice-quiet" data-testid="advice">
+      <div className="advice advice-quiet" data-testid="advice-full">
         <p className="advice-club">Part swing</p>
         <p>{result.reason}</p>
       </div>
@@ -42,7 +109,7 @@ export function AdviceCard({ result, units }: { result: CaddieResult; units: Uni
   }
   if (result.kind === 'distance-only') {
     return (
-      <div className="advice" data-testid="advice">
+      <div className="advice" data-testid="advice-full">
         <p className="advice-club">{result.clubName}</p>
         <p className="advice-aim">
           Carries about {d(result.carryM)}, finishes around {d(result.totalM)}. Flag {d(result.targetM)} (rangefinder).
@@ -55,7 +122,7 @@ export function AdviceCard({ result, units }: { result: CaddieResult; units: Uni
 
   const p = result.primary
   return (
-    <div className="advice" data-testid="advice">
+    <div className="advice" data-testid="advice-full">
       <p className="advice-target">
         {result.pinSource === 'rangefinder'
           ? `Playing to your rangefinder: ${d(result.targetM)} to the flag`

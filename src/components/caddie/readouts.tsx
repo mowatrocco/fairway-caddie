@@ -77,18 +77,21 @@ export function HazardList({
   hazards,
   boundaries,
   units,
+  compact,
 }: {
   hazards: HazardReading[]
   boundaries: BoundaryReading[]
   units: Units
+  /** Short rows for the Caddie screen. */
+  compact?: boolean
 }) {
   const u = unitLabel(units)
   const n = (m: number) => formatDistance(m, units)
   if (hazards.length === 0 && boundaries.length === 0) {
-    return <p className="quiet">No mapped hazards near your line to the green.</p>
+    return <p className={compact ? 'field-hint hazards-none' : 'quiet'}>No mapped hazards near your line to the green.</p>
   }
   return (
-    <ul className="hazards">
+    <ul className={compact ? 'hazards hazards-compact' : 'hazards'} aria-label="Hazards">
       {boundaries.map((b) => (
         <li key={b.id} className="hazard hazard-ob">
           <span className="hz-name">Out of bounds {SIDE_WORD[b.side]}</span>

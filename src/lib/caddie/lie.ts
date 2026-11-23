@@ -28,6 +28,14 @@ export const SLOPE_LABEL: Record<Slope, string> = {
   downhill: 'Downhill',
 }
 
+/** Short form for the lie button on the Caddie screen. */
+export const SLOPE_SHORT: Record<Slope, string> = {
+  'above-feet': 'above feet',
+  'below-feet': 'below feet',
+  uphill: 'uphill',
+  downhill: 'downhill',
+}
+
 /** Slopes that can't both be true; picking one clears the other. */
 export const OPPOSITE: Record<Slope, Slope> = {
   'above-feet': 'below-feet',
