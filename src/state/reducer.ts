@@ -1,8 +1,9 @@
 import type { AppData, Club, Profile } from '../types'
 import type { CourseFeature } from '../types/courseMap'
 import { confirmRough } from '../lib/calculations/clubs'
-import type { HoleScore } from '../types/round'
+import type { HoleScore, Shot, ShotResult, ShotSpot } from '../types/round'
 import { emptyHoles } from '../lib/rounds/score'
+import { addShot, editShot, markFinish, removeShot } from '../lib/rounds/shots'
 
 export type Action =
   | { type: 'replace'; data: AppData }
@@ -19,6 +20,10 @@ export type Action =
   | { type: 'finishRound'; roundId: string; at: string }
   | { type: 'reopenRound'; roundId: string; at: string }
   | { type: 'deleteRound'; roundId: string }
+  | { type: 'logShot'; roundId: string; shot: Shot }
+  | { type: 'deleteShot'; roundId: string; shotId: string }
+  | { type: 'markShotFinish'; roundId: string; shotId: string; spot: ShotSpot | null }
+  | { type: 'editShot'; roundId: string; shotId: string; clubId?: string; result?: ShotResult }
 
 export function reducer(state: AppData, action: Action): AppData {
   switch (action.type) {
@@ -57,7 +62,7 @@ export function reducer(state: AppData, action: Action): AppData {
       const rounds = state.rounds.map((r) => (r.finishedAt === null ? { ...r, finishedAt: action.at } : r))
       return {
         ...state,
-        rounds: [...rounds, { id: action.id, courseId: action.courseId, teeId: action.teeId, startedAt: action.at, finishedAt: null, holes: emptyHoles() }],
+        rounds: [...rounds, { id: action.id, courseId: action.courseId, teeId: action.teeId, startedAt: action.at, finishedAt: null, holes: emptyHoles(), shots: [] }],
       }
     }
     case 'updateHole':
@@ -76,6 +81,17 @@ export function reducer(state: AppData, action: Action): AppData {
       }
     case 'deleteRound':
       return { ...state, rounds: state.rounds.filter((r) => r.id !== action.roundId) }
+    case 'logShot':
+      return withShots(state, action.roundId, (shots) => addShot(shots, action.shot))
+    case 'deleteShot':
+      return withShots(state, action.roundId, (shots) => removeShot(shots, action.shotId))
+    case 'markShotFinish':
+      return withShots(state, action.roundId, (shots) => markFinish(shots, action.shotId, action.spot))
+    case 'editShot': {
+      const club = action.clubId ? state.bag.find((c) => c.id === action.clubId) : undefined
+      if (action.clubId && !club) return state
+      return withShots(state, action.roundId, (shots) => editShot(shots, action.shotId, { club, result: action.result }))
+    }
     case 'setCourseFeatures': {
       const updatedAt = new Date().toISOString()
       const exists = state.courseMaps.some((m) => m.courseId === action.courseId)
@@ -85,4 +101,8 @@ export function reducer(state: AppData, action: Action): AppData {
       return { ...state, courseMaps }
     }
   }
+}
+
+function withShots(state: AppData, roundId: string, change: (shots: Shot[]) => Shot[]): AppData {
+  return { ...state, rounds: state.rounds.map((r) => (r.id === roundId ? { ...r, shots: change(r.shots) } : r)) }
 }

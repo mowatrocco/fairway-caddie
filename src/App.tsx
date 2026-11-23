@@ -94,6 +94,7 @@ export default function App() {
             data={data}
             goToBag={() => go('bag')}
             openMap={openMap}
+            dispatch={dispatch}
             scoreHole={(h) => {
               setRoundHole(h)
               go('round')

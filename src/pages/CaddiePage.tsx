@@ -40,6 +40,9 @@ import { NumberField } from '../components/Fields'
 import type { CourseFeature } from '../types/courseMap'
 import type { TrustLevel } from '../types/course'
 import type { Club } from '../types'
+import type { ShotSpot } from '../types/round'
+import type { Action } from '../state/reducer'
+import { ShotLogger } from '../components/caddie/ShotLogger'
 
 const CaddieMap = lazy(() => import('../components/caddie/CaddieMap'))
 
@@ -49,6 +52,7 @@ interface Props {
   openMap: () => void
   /** Open the Round tab on a hole. */
   scoreHole: (hole: number) => void
+  dispatch: (a: Action) => void
 }
 
 const COURSE = southHead
@@ -60,6 +64,8 @@ const RF_MOVE_M = 15
 const clockNow = () => Date.now()
 /** Within this of one of the hole's tee markers counts as being on the tee. */
 const ON_TEE_M = 25
+/** Within this of the green middle, offer to mark where your last shot finished. */
+const NEAR_GREEN_M = 50
 
 function savedHole(): number {
   const n = Number(sessionStorage.getItem('caddieHole'))
@@ -72,7 +78,7 @@ function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
-export function CaddiePage({ data, goToBag, openMap, scoreHole }: Props) {
+export function CaddiePage({ data, goToBag, openMap, scoreHole, dispatch }: Props) {
   const liveRound = activeRound(data.rounds)
   const units = data.profile.units
   const u = unitLabel(units)
@@ -118,6 +124,8 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole }: Props) {
   const status = describeFix(gps.fix, gps.now, gps.base)
   const onTapMap = useCallback((p: LngLat) => setMeasure(p), [])
   const [plan, setPlan] = useState<{ aim: LngLat; zone: LngLat[] } | null>(null)
+  // The caddie's club for this shot, offered as the one-tap button for logging it.
+  const [pickId, setPickId] = useState<string | null>(null)
 
   // Ground heights around this shot (you and the green), for slope.
   const herePos: LngLat | null = manualPos ?? gps.fix?.point ?? null
@@ -142,6 +150,12 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole }: Props) {
   const roughM =
     manualPos || status.kind !== 'fix' ? null : status.stale || status.accuracyM > FAIR_M ? status.accuracyM : null
   const fairPm = !manualPos && status.kind === 'fix' && !status.stale && status.grade === 'fair' ? status.accuracyM : null
+  /** Where a logged shot is hit from: a spot set on the map, or a GPS fix that isn't out of date. */
+  const shotSpot: ShotSpot | null = manualPos
+    ? { point: manualPos, accuracyM: null }
+    : gps.fix && status.kind === 'fix' && !status.stale
+      ? { point: gps.fix.point, accuracyM: status.accuracyM }
+      : null
 
   // During a round, the card is the tees you're playing.
   const usual =
@@ -341,6 +355,20 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole }: Props) {
           </button>
         </div>
       )}
+      {liveRound && ring && !farAway && (
+        <ShotLogger
+          key={hole}
+          round={liveRound}
+          hole={hole}
+          bag={data.bag}
+          units={units}
+          spot={shotSpot}
+          pickId={adviceInput ? pickId : null}
+          onGreen={onGreen}
+          nearGreen={dists !== null && dists.middleM <= NEAR_GREEN_M}
+          dispatch={dispatch}
+        />
+      )}
 
       {gpsOn === false && (
         <div className="callout">
@@ -412,7 +440,7 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole }: Props) {
           {windBlock}
           {!onGreen && rangefinderBlock}
           {adviceInput && (position || rf !== null) && (
-            <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} chat onSetLie={setLie} onSetWind={applyWind} />
+            <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} chat onSetLie={setLie} onSetWind={applyWind} onPick={setPickId} />
           )}
         </>
       ) : (
@@ -465,7 +493,7 @@ export function CaddiePage({ data, goToBag, openMap, scoreHole }: Props) {
           {windBlock}
           {!onGreen && !farAway && rangefinderBlock}
           {adviceInput && position && !farAway && (
-            <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} onPlan={setPlan} table />
+            <Advice input={adviceInput} units={units} onStrategy={setStrategy} goToBag={goToBag} onPlan={setPlan} onPick={setPickId} table />
           )}
         </>
       )}
@@ -616,6 +644,7 @@ function Advice({
   chat,
   onSetLie,
   onSetWind,
+  onPick,
 }: {
   input: AdviceInput
   units: AppData['profile']['units']
@@ -626,6 +655,7 @@ function Advice({
   chat?: boolean
   onSetLie?: (l: Lie) => void
   onSetWind?: (w: { dirs: WindDir[]; strength: WindStrength | null }) => void
+  onPick?: (clubId: string | null) => void
 }) {
   const { features, hole, green, middle, greenTrust, position, source, accuracyM, stale, rf, fromTee, lie, heightAt, terrainVersion, wind, clubs, strategy } = input
   const windKey = wind ? `${wind.head.toFixed(2)}|${wind.cross.toFixed(2)}|${wind.kmh}` : ''
@@ -663,6 +693,11 @@ function Advice({
     onPlan(result.kind === 'advice' ? { aim: result.primary.aim, zone: result.primary.zone } : null)
   }, [result, onPlan])
   useEffect(() => () => onPlan?.(null), [onPlan])
+  const pickId = result.kind === 'advice' ? result.primary.clubId : null
+  useEffect(() => {
+    onPick?.(pickId)
+  }, [pickId, onPick])
+  useEffect(() => () => onPick?.(null), [onPick])
 
   const noDistances = result.kind === 'none' && !clubs.some((c) => c.category !== 'putter' && (c.carryM ?? c.roughM) !== null)
   return (

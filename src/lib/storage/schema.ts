@@ -98,14 +98,36 @@ const holeScoreSchema = z.object({
   fairway: z.enum(['hit', 'left', 'right']).nullable(),
 })
 
-export const roundSchema = z.object({
-  id: z.string().min(1),
-  courseId: z.string().min(1),
-  teeId: z.string().min(1),
-  startedAt: z.string(),
-  finishedAt: z.string().nullable(),
-  holes: z.array(holeScoreSchema).length(18),
+const shotSpotSchema = z.object({
+  point: lngLat,
+  accuracyM: z.number().min(0).max(10000).nullable(),
 })
+
+const shotSchema = z
+  .object({
+    id: z.string().min(1),
+    hole: z.number().int().min(1).max(18),
+    clubId: z.string().min(1),
+    clubName: z.string().max(60),
+    at: z.string(),
+    from: shotSpotSchema.nullable(),
+    to: shotSpotSchema.nullable(),
+    toBy: z.enum(['next-shot', 'marked']).nullable(),
+    result: z.enum(['ok', 'penalty', 'mishit']),
+  })
+  .refine((s) => (s.to === null) === (s.toBy === null), { message: 'A shot finish needs to say how it was set.' })
+
+export const roundSchema = z
+  .object({
+    id: z.string().min(1),
+    courseId: z.string().min(1),
+    teeId: z.string().min(1),
+    startedAt: z.string(),
+    finishedAt: z.string().nullable(),
+    holes: z.array(holeScoreSchema).length(18),
+    shots: z.array(shotSchema).max(400),
+  })
+  .refine((r) => new Set(r.shots.map((s) => s.id)).size === r.shots.length, { message: 'Two shots share the same id.' })
 
 export const appDataSchema = z
   .object({
@@ -129,6 +151,7 @@ export const backupSchema = z.object({
  * Bring data saved by an older version up to date before it is checked.
  * v1 → v2: course maps added (empty South Head map).
  * v2 → v3: rounds added (none yet).
+ * v3 → v4: each round gets an empty list of logged shots. Scores are untouched.
  */
 export function migrateAppData(raw: unknown, fromVersion: number): unknown {
   let data = raw
@@ -140,6 +163,13 @@ export function migrateAppData(raw: unknown, fromVersion: number): unknown {
   }
   if (fromVersion < 3 && data && typeof data === 'object' && !('rounds' in data)) {
     data = { ...(data as object), rounds: [] }
+  }
+  if (fromVersion < 4 && data && typeof data === 'object' && Array.isArray((data as { rounds?: unknown }).rounds)) {
+    const d = data as { rounds: unknown[] }
+    data = {
+      ...d,
+      rounds: d.rounds.map((r) => (r && typeof r === 'object' && !('shots' in r) ? { ...r, shots: [] } : r)),
+    }
   }
   return data
 }

@@ -11,7 +11,7 @@ const par = (h: number) => white.holes[h - 1].par
 
 function round(scores: Partial<HoleScore>[]): Round {
   const holes = emptyHoles().map((h, i) => ({ ...h, ...(scores[i] ?? {}) }))
-  return { id: 'r1', courseId: 'south-head', teeId: 'white', startedAt: '2026-11-18T01:00:00Z', finishedAt: null, holes }
+  return { id: 'r1', courseId: 'south-head', teeId: 'white', startedAt: '2026-11-18T01:00:00Z', finishedAt: null, holes, shots: [] }
 }
 
 describe('scoring maths', () => {

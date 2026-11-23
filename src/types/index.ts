@@ -73,5 +73,5 @@ export interface AppData {
   rounds: Round[]
 }
 
-/** 1 = bag + profile. 2 = adds course maps. 3 = adds rounds. */
-export const SCHEMA_VERSION = 3
+/** 1 = bag + profile. 2 = adds course maps. 3 = adds rounds. 4 = adds logged shots to rounds. */
+export const SCHEMA_VERSION = 4

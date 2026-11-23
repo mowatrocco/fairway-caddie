@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import type { AppData, Profile } from '../types'
+import type { AppData, Club, Profile } from '../types'
 import type { TeeCard, ScorecardHole } from '../types/course'
-import type { FairwayResult, HoleScore, Round } from '../types/round'
+import type { FairwayResult, HoleScore, Round, ShotResult } from '../types/round'
 import type { Action } from '../state/reducer'
 import { southHead } from '../data/courses/southHead'
 import { backNine, frontNine } from '../lib/calculations/scorecard'
@@ -16,6 +16,7 @@ import {
   roundTotals,
   scoreName,
 } from '../lib/rounds/score'
+import { clubLines, shotDistance, shotsOnHole, unfinishedShots } from '../lib/rounds/shots'
 import { Choice } from '../components/Fields'
 import { newId } from '../lib/id'
 
@@ -51,6 +52,7 @@ export function RoundPage({ data, dispatch, initialHole }: Props) {
       key={round.id}
       round={round}
       profile={data.profile}
+      bag={data.bag}
       dispatch={dispatch}
       initialHole={round === live ? initialHole : null}
       onClose={viewing ? () => setViewingId(null) : null}
@@ -122,12 +124,14 @@ function StartView({ data, dispatch, onOpen }: { data: AppData; dispatch: (a: Ac
 function RoundView({
   round,
   profile,
+  bag,
   dispatch,
   initialHole,
   onClose,
 }: {
   round: Round
   profile: Profile
+  bag: Club[]
   dispatch: (a: Action) => void
   initialHole: number | null
   onClose: (() => void) | null
@@ -162,6 +166,7 @@ function RoundView({
       </div>
 
       <Summary totals={totals} />
+      {!live && <RoundReport round={round} tee={tee} bag={bag} profile={profile} />}
 
       <div className="hole-card" data-testid="hole-card">
         <div className="hole-nav">
@@ -239,6 +244,8 @@ function RoundView({
             {p}
           </p>
         ))}
+
+        <HoleShots key={hole} round={round} hole={hole} bag={bag} profile={profile} dispatch={dispatch} />
 
         {hole < 18 && (
           <button className="btn btn-wide" onClick={() => setHole(hole + 1)}>
@@ -320,6 +327,208 @@ function Summary({ totals: t }: { totals: ReturnType<typeof roundTotals> }) {
         {t.penalties > 0 && `, ${t.penalties} penalty stroke${t.penalties === 1 ? '' : 's'}`}
       </p>
     </div>
+  )
+}
+
+// ---------- Shots logged on a hole: check and fix them ----------
+
+const RESULT_LABEL: Record<ShotResult, string> = { ok: 'Fine', penalty: 'Penalty', mishit: 'Mis-hit' }
+
+function HoleShots({
+  round,
+  hole,
+  bag,
+  profile,
+  dispatch,
+}: {
+  round: Round
+  hole: number
+  bag: Club[]
+  profile: Profile
+  dispatch: (a: Action) => void
+}) {
+  const [openId, setOpenId] = useState<string | null>(null)
+  const shots = shotsOnHole(round.shots, hole)
+  const u = unitLabel(profile.units)
+  const clubs = bag.filter((c) => c.category !== 'putter')
+  if (shots.length === 0) return null
+
+  return (
+    <div className="field" data-testid="hole-shots">
+      <span className="field-label">Shots logged</span>
+      <span className="field-hint">
+        {shots.length} shot{shots.length === 1 ? '' : 's'} before putting. Tap one to change the club or mark a penalty or mis-hit.
+      </span>
+      <ol className="shot-list">
+        {shots.map((s, i) => {
+          const d = shotDistance(s)
+          const open = openId === s.id
+          // A club that's left the bag can still be shown, but not picked again.
+          const options = clubs.some((c) => c.id === s.clubId) ? clubs : [{ id: s.clubId, name: s.clubName } as Club, ...clubs]
+          return (
+            <li key={s.id} className="shot-row">
+              <button className="shot-row-btn" aria-expanded={open} onClick={() => setOpenId(open ? null : s.id)}>
+                <span className="shot-no">{i + 1}</span>
+                <span>
+                  {s.clubName}
+                  {s.result !== 'ok' && <span className="shot-tag">{RESULT_LABEL[s.result]}</span>}
+                </span>
+                <span className="shot-dist">
+                  {d ? `${d.rough ? '≈' : ''}${formatDistance(d.m, profile.units)} ${u}` : s.from ? 'no finish' : 'no position'}
+                </span>
+              </button>
+              {open && (
+                <div className="shot-edit">
+                  <label className="field">
+                    <span className="field-label">Club</span>
+                    <select
+                      className="input"
+                      value={s.clubId}
+                      onChange={(e) => dispatch({ type: 'editShot', roundId: round.id, shotId: s.id, clubId: e.target.value })}
+                    >
+                      {options.map((c) => (
+                        <option key={c.id} value={c.id} disabled={!clubs.some((x) => x.id === c.id)}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Choice
+                    label="How it went"
+                    value={s.result}
+                    options={(['ok', 'penalty', 'mishit'] as ShotResult[]).map((v) => ({ value: v, label: RESULT_LABEL[v] }))}
+                    onChange={(v) => dispatch({ type: 'editShot', roundId: round.id, shotId: s.id, result: v })}
+                    hint="Penalties and mis-hits stay in the round but are kept out of club distances."
+                  />
+                  {d?.rough && <p className="field-hint">GPS was rough at one end, so this distance (≈) is kept out of club distances.</p>}
+                  {!s.from && <p className="field-hint">There was no GPS position when you logged it, so it has no distance.</p>}
+                  <button
+                    className="link-btn link-danger"
+                    onClick={() => {
+                      dispatch({ type: 'deleteShot', roundId: round.id, shotId: s.id })
+                      setOpenId(null)
+                    }}
+                  >
+                    Delete this shot
+                  </button>
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
+// ---------- After the round ----------
+
+function RoundReport({ round, tee, bag, profile }: { round: Round; tee: TeeCard; bag: Club[]; profile: Profile }) {
+  const t = roundTotals(round, tee)
+  const u = unitLabel(profile.units)
+  const d = (m: number | null) => formatDistance(m, profile.units)
+  const scored = round.holes.filter((h) => h.strokes !== null)
+  if (scored.length === 0 && round.shots.length === 0) return null
+
+  const threePutts = scored.filter((h) => h.putts !== null && h.putts >= 3).length
+  const byPar = [3, 4, 5]
+    .map((p) => {
+      const holes = scored.filter((h) => parOf(tee, h.hole) === p)
+      const over = holes.reduce((a, h) => a + h.strokes! - p, 0)
+      return { par: p, n: holes.length, avg: holes.length ? over / holes.length : 0 }
+    })
+    .filter((x) => x.n > 0)
+  const lines = clubLines(round.shots, bag)
+  const noFinish = unfinishedShots(round)
+  const signed = (n: number) => (Math.abs(n) < 0.05 ? 'level' : n > 0 ? `+${n.toFixed(1)}` : `−${(-n).toFixed(1)}`)
+
+  return (
+    <section className="report" aria-label="Round summary" data-testid="round-report">
+      <h2 className="section-title">How it went</h2>
+      {scored.length > 0 && (
+        <dl className="report-grid">
+          {t.puttHoles > 0 && (
+            <div>
+              <dt>Putts</dt>
+              <dd>
+                {t.putts} <small>{(t.putts / t.puttHoles).toFixed(1)} a hole</small>
+              </dd>
+            </div>
+          )}
+          {t.puttHoles > 0 && (
+            <div>
+              <dt>3-putts</dt>
+              <dd>{threePutts}</dd>
+            </div>
+          )}
+          {t.fairways.of > 0 && (
+            <div>
+              <dt>Fairways</dt>
+              <dd>
+                {t.fairways.hit}/{t.fairways.of}{' '}
+                {t.fairways.left + t.fairways.right > 0 && (
+                  <small>
+                    {t.fairways.left}L {t.fairways.right}R
+                  </small>
+                )}
+              </dd>
+            </div>
+          )}
+          {t.greens.of > 0 && (
+            <div>
+              <dt>Greens</dt>
+              <dd>
+                {t.greens.hit}/{t.greens.of}
+              </dd>
+            </div>
+          )}
+          <div>
+            <dt>Penalties</dt>
+            <dd>{t.penalties}</dd>
+          </div>
+          {byPar.map((x) => (
+            <div key={x.par}>
+              <dt>Par {x.par}s</dt>
+              <dd>
+                {signed(x.avg)} <small>average of {x.n}</small>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {lines.length > 0 ? (
+        <>
+          <h2 className="section-title">Clubs</h2>
+          <table className="club-table">
+            <thead>
+              <tr>
+                <th scope="col">Club</th>
+                <th scope="col">Shots</th>
+                <th scope="col">Average ({u})</th>
+                <th scope="col">Longest ({u})</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l) => (
+                <tr key={l.clubId}>
+                  <th scope="row">{l.clubName}</th>
+                  <td>{l.shots}</td>
+                  <td>{l.measured ? d(l.averageM) : '—'}</td>
+                  <td>{l.measured ? d(l.longestM) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="field-hint">
+            Distances run from where you hit to where the ball finished, so they include roll. Penalties, mis-hits and shots with rough GPS are left out.
+            {noFinish > 0 && ` ${noFinish} shot${noFinish === 1 ? ' has' : 's have'} no finish marked, so no distance.`}
+          </p>
+        </>
+      ) : (
+        <p className="field-hint">No shots logged this round. Tap a club on the Caddie screen as you play to see your club distances here.</p>
+      )}
+    </section>
   )
 }
 

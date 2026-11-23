@@ -2188,3 +2188,194 @@ html.mapper-open body {
 .link-danger {
   color: var(--danger);
 }
+
+/* ---------- Shot logging (Caddie screen) ---------- */
+
+.shot-logger {
+  margin-top: 12px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.shot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shot-head .section-title {
+  margin: 0;
+}
+
+.shot-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+}
+
+.shot-no {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.shot-dist {
+  margin-left: 6px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.shot-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.shot-pick {
+  flex: 1;
+}
+
+.shot-clubs {
+  margin-top: 10px;
+}
+
+.shot-logger .btn-wide {
+  margin-top: 10px;
+}
+
+.shot-flash {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.shot-flash:empty {
+  display: none;
+}
+
+/* ---------- Shots on the Round screen ---------- */
+
+.shot-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shot-row {
+  border-bottom: 1px solid var(--line);
+}
+
+.shot-row:last-child {
+  border-bottom: 0;
+}
+
+.shot-row-btn {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shot-tag {
+  margin-left: 6px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.shot-edit {
+  padding: 4px 0 12px;
+}
+
+.shot-edit .field {
+  margin-top: 8px;
+}
+
+/* ---------- Round report ---------- */
+
+.report {
+  margin-top: 16px;
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+}
+
+.report-grid div {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.report-grid dt {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.report-grid dd {
+  margin: 2px 0 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-grid small {
+  display: block;
+  font-family: var(--font);
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.club-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.club-table th,
+.club-table td {
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+
+.club-table th:first-child,
+.club-table td:first-child {
+  text-align: left;
+}
+
+.club-table thead th {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
